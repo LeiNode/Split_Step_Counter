@@ -20,6 +20,12 @@ MODEL_URL  = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/po
 MODEL_PATH = "pose_landmarker_full.task"
 
 # ── Landmark indices ───────────────────────────────────────────────────────────
+LEFT_SHOULDER    = 11
+RIGHT_SHOULDER   = 12
+LEFT_ELBOW       = 13
+RIGHT_ELBOW      = 14
+LEFT_WRIST       = 15
+RIGHT_WRIST      = 16
 LEFT_HIP         = 23
 RIGHT_HIP        = 24
 LEFT_ANKLE       = 27
@@ -38,9 +44,17 @@ POSE_CONNECTIONS = [
 ]
 
 # ── Tuning ─────────────────────────────────────────────────────────────────────
-MIN_VISIBILITY   = 0.5   # landmarks below this confidence are treated as out-of-frame
-LIFT_THRESHOLD   = 0.04  # metres above ground baseline to consider foot in air
-HOP_SYNC_WINDOW  = 0.20  # seconds between lifts to count as a simultaneous hop
+MIN_VISIBILITY      = 0.5   # landmarks below this confidence are treated as out-of-frame
+HOP_SYNC_WINDOW     = 0.30  # seconds between lifts to count as a simultaneous hop
+MIN_GROUNDED_FRAMES  = 3    # consecutive grounded frames required before a hop counts
+MIN_AIRBORNE_FRAMES  = 2    # both-feet-airborne frames required to confirm a real hop
+VEL_EMA_ALPHA        = 0.4    # smoothing for per-foot velocity (0=laggy, 1=no smoothing)
+VEL_LIFT_MIN         = 0.001  # m/frame minimum upward EMA velocity to count a landmark as rising
+VEL_SIMILARITY_RATIO = 0.3    # slower foot must reach at least this fraction of the faster foot's upward speed
+TORSO_BOX_MARGIN     = 0.20 # metres of extra padding added to each side of the torso box
+WRIST_PROXIMITY      = 0.55 # max 3-D distance (metres) between wrists to count as close together
+MAX_ELBOW_ANGLE      = 155  # degrees; above this an arm is too extended for a ready stance
+MAX_FOOT_HEIGHT_DIFF = 0.20 # max y-gap (metres) between ankles at takeoff; running cross-steps exceed this
 
 KEY_LANDMARKS = [LEFT_HIP, RIGHT_HIP, LEFT_ANKLE, RIGHT_ANKLE,
                  LEFT_HEEL, RIGHT_HEEL, LEFT_FOOT_INDEX, RIGHT_FOOT_INDEX]
@@ -109,56 +123,56 @@ def annotate_frame(frame: np.ndarray, det: "SplitStepDetector", hop: bool) -> No
 # ── Foot-state tracker ────────────────────────────────────────────────────────
 
 class FootStateTracker:
+    _LEFT_LANDMARKS  = (LEFT_ANKLE,  LEFT_HEEL,  LEFT_FOOT_INDEX)
+    _RIGHT_LANDMARKS = (RIGHT_ANKLE, RIGHT_HEEL, RIGHT_FOOT_INDEX)
+
     def __init__(self):
-        self.left_ground_y  = None   # running minimum foot y (ground level)
-        self.right_ground_y = None
         self.left_lift_time  = 0.0
         self.right_lift_time = 0.0
         self.left_is_up  = False
         self.right_is_up = False
+        all_lms = self._LEFT_LANDMARKS + self._RIGHT_LANDMARKS
+        self._prev_y = {i: None for i in all_lms}
+        self._vel    = {i: 0.0  for i in all_lms}
 
     def reset(self):
         self.__init__()
 
-    @staticmethod
-    def _foot_y(lms, ankle, heel, toe) -> float:
-        """Average world-space y of ankle, heel, and toe (higher = more airborne)."""
-        return (lms[ankle].y + lms[heel].y + lms[toe].y) / 3
+    @property
+    def left_vel(self) -> float:
+        return sum(self._vel[i] for i in self._LEFT_LANDMARKS) / 3
+
+    @property
+    def right_vel(self) -> float:
+        return sum(self._vel[i] for i in self._RIGHT_LANDMARKS) / 3
+
+    def _update_velocities(self, lms) -> None:
+        a = VEL_EMA_ALPHA
+        for idx in self._prev_y:
+            y = lms[idx].y
+            if self._prev_y[idx] is not None:
+                raw = y - self._prev_y[idx]
+                self._vel[idx] = a * raw + (1 - a) * self._vel[idx]
+            self._prev_y[idx] = y
+
+    def _all_rising(self, indices) -> bool:
+        """True when every landmark in the group has upward EMA velocity above the noise floor."""
+        return all(self._vel[i] > VEL_LIFT_MIN for i in indices)
 
     def process_frame(self, world_landmarks) -> str:
         current_time = time.time()
+        self._update_velocities(world_landmarks)
 
-        left_y  = self._foot_y(world_landmarks, LEFT_ANKLE,  LEFT_HEEL,  LEFT_FOOT_INDEX)
-        right_y = self._foot_y(world_landmarks, RIGHT_ANKLE, RIGHT_HEEL, RIGHT_FOOT_INDEX)
+        left_rising  = self._all_rising(self._LEFT_LANDMARKS)
+        right_rising = self._all_rising(self._RIGHT_LANDMARKS)
 
-        # Adaptive ground baseline:
-        #   - foot at or below baseline → fast EMA (α=0.10) tracks the ground
-        #   - foot above baseline → hold steady; only a tiny drift (α=0.02) so a
-        #     stuck-high calibration self-corrects in ~1-2 s without chasing the
-        #     rising foot and delaying detection.
-        if self.left_ground_y is None:
-            self.left_ground_y  = left_y
-            self.right_ground_y = right_y
-        else:
-            for side in ("left", "right"):
-                fy = left_y  if side == "left" else right_y
-                gy = self.left_ground_y if side == "left" else self.right_ground_y
-                new_gy = 0.10 * fy + 0.90 * gy if fy <= gy else 0.02 * fy + 0.98 * gy
-                if side == "left":
-                    self.left_ground_y  = new_gy
-                else:
-                    self.right_ground_y = new_gy
-
-        left_lifted_now  = (left_y  - self.left_ground_y)  > LIFT_THRESHOLD
-        right_lifted_now = (right_y - self.right_ground_y) > LIFT_THRESHOLD
-
-        if left_lifted_now and not self.left_is_up:
+        if left_rising and not self.left_is_up:
             self.left_lift_time = current_time
-        if right_lifted_now and not self.right_is_up:
+        if right_rising and not self.right_is_up:
             self.right_lift_time = current_time
 
-        self.left_is_up  = left_lifted_now
-        self.right_is_up = right_lifted_now
+        self.left_is_up  = left_rising
+        self.right_is_up = right_rising
 
         if self.left_is_up and self.right_is_up:
             if abs(self.left_lift_time - self.right_lift_time) <= HOP_SYNC_WINDOW:
@@ -178,12 +192,81 @@ class SplitStepDetector:
         self.reset()
 
     def reset(self):
-        self.count   = 0
-        self.state   = GROUNDED
-        self._tracker = FootStateTracker()
+        self.count             = 0
+        self.state             = GROUNDED
+        self._tracker          = FootStateTracker()
+        self._grounded_streak  = 0
+        self._last_grnd_streak = 0
+        self._airborne_frames  = 0
+        self._hop_was_valid    = False
+
+    @staticmethod
+    def _velocities_similar(tracker: "FootStateTracker") -> bool:
+        """Both feet must be rising above the noise floor and at similar upward speeds."""
+        vl, vr = tracker.left_vel, tracker.right_vel
+        if vl <= VEL_LIFT_MIN or vr <= VEL_LIFT_MIN:
+            return False
+        return min(vl, vr) / max(vl, vr) >= VEL_SIMILARITY_RATIO
+
+    @staticmethod
+    def _hands_in_ready_position(landmarks) -> bool:
+        """Both wrists must lie within the torso bounding box (shoulders → hips),
+        expanded by TORSO_BOX_MARGIN on every side. Falls back to True when any
+        reference landmark is not visible."""
+        lw = landmarks[LEFT_WRIST]
+        rw = landmarks[RIGHT_WRIST]
+        ls = landmarks[LEFT_SHOULDER]
+        rs = landmarks[RIGHT_SHOULDER]
+        lh = landmarks[LEFT_HIP]
+        rh = landmarks[RIGHT_HIP]
+
+        if any(lm.visibility < MIN_VISIBILITY for lm in (lw, rw, ls, rs, lh, rh)):
+            return True
+
+        m = TORSO_BOX_MARGIN
+        box_x_min = min(ls.x, lh.x) - m
+        box_x_max = max(rs.x, rh.x) + m
+        box_y_min = min(lh.y, rh.y) - m
+        box_y_max = max(ls.y, rs.y) + m
+
+        def in_box(w) -> bool:
+            return box_x_min <= w.x <= box_x_max and box_y_min <= w.y <= box_y_max
+
+        return in_box(lw) and in_box(rw)
+
+    @staticmethod
+    def _wrists_close_together(landmarks) -> bool:
+        """Both wrists must be within WRIST_PROXIMITY metres of each other (3-D).
+        Falls back to True when wrists are not visible."""
+        lw = landmarks[LEFT_WRIST]
+        rw = landmarks[RIGHT_WRIST]
+        if lw.visibility < MIN_VISIBILITY or rw.visibility < MIN_VISIBILITY:
+            return True
+        dist = np.linalg.norm([lw.x - rw.x, lw.y - rw.y, lw.z - rw.z])
+        return dist <= WRIST_PROXIMITY
+
+    @staticmethod
+    def _elbows_bent(landmarks) -> bool:
+        """Both elbows must be bent below MAX_ELBOW_ANGLE degrees.
+        A straightened arm indicates a stroke follow-through, not a ready stance.
+        Falls back to True for any arm whose landmarks are not visible."""
+        for s_idx, e_idx, w_idx in ((LEFT_SHOULDER,  LEFT_ELBOW,  LEFT_WRIST),
+                                     (RIGHT_SHOULDER, RIGHT_ELBOW, RIGHT_WRIST)):
+            s = landmarks[s_idx]
+            e = landmarks[e_idx]
+            w = landmarks[w_idx]
+            if any(lm.visibility < MIN_VISIBILITY for lm in (s, e, w)):
+                continue  # can't assess this arm — don't penalise
+            v1 = np.array([s.x - e.x, s.y - e.y, s.z - e.z])
+            v2 = np.array([w.x - e.x, w.y - e.y, w.z - e.z])
+            cos_a = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-9)
+            angle = np.degrees(np.arccos(np.clip(cos_a, -1.0, 1.0)))
+            if angle > MAX_ELBOW_ANGLE:
+                return False  # this arm is too straight — block the count
+        return True
 
     def process(self, landmarks) -> bool:
-        """Process one frame's world landmarks. Returns True if a hop was just counted."""
+        """Process one frame's world landmarks. Returns True if a hop was just confirmed."""
         if not all(landmarks[i].visibility >= MIN_VISIBILITY for i in KEY_LANDMARKS):
             return False
 
@@ -191,9 +274,7 @@ class SplitStepDetector:
 
         prev_state = self.state
 
-        if result == "HOP DETECTED":
-            self.state = AIRBORNE
-        elif result == "Sequential step":
+        if result in ("HOP DETECTED", "Sequential step"):
             self.state = AIRBORNE
         elif result == "Left Foot in Air":
             self.state = LEFT_LEG_UP
@@ -202,9 +283,39 @@ class SplitStepDetector:
         else:
             self.state = GROUNDED
 
-        hop = self.state == AIRBORNE and prev_state in (GROUNDED, LEFT_LEG_UP, RIGHT_LEG_UP)
-        if hop:
-            self.count += 1
+        # ── Grounded streak ──────────────────────────────────────────────────
+        if self.state == GROUNDED:
+            self._grounded_streak += 1
+        else:
+            if prev_state == GROUNDED:
+                self._last_grnd_streak = self._grounded_streak
+            if self.state not in (AIRBORNE,):
+                self._grounded_streak = 0  # entering a leg-up state
+
+        ready = (self._grounded_streak  >= MIN_GROUNDED_FRAMES or
+                 self._last_grnd_streak >= MIN_GROUNDED_FRAMES)
+
+        # ── Airborne duration + landing confirmation ─────────────────────────
+        hop = False
+        if self.state == AIRBORNE:
+            if prev_state != AIRBORNE:
+                # Just took off: record whether the ready condition was met.
+                self._hop_was_valid   = (ready
+                                         and self._velocities_similar(self._tracker)
+                                         and self._hands_in_ready_position(landmarks)
+                                         and self._wrists_close_together(landmarks)
+                                         and self._elbows_bent(landmarks))
+                self._grounded_streak = 0
+                self._last_grnd_streak = 0
+            self._airborne_frames += 1
+        elif prev_state == AIRBORNE:
+            # Just landed: confirm the hop only if it was valid AND long enough
+            # to distinguish a real hop from a brief lateral weight transfer.
+            if self._hop_was_valid and self._airborne_frames >= MIN_AIRBORNE_FRAMES:
+                self.count += 1
+                hop = True
+            self._airborne_frames = 0
+            self._hop_was_valid   = False
 
         return hop
 
@@ -235,6 +346,10 @@ class _AnalysisWorker:
         """Return the timestamp in ms to pass to MediaPipe for this frame."""
         raise NotImplementedError
 
+    def _frame_delay_s(self, cap: cv2.VideoCapture) -> float:
+        """Seconds to wait after processing each frame. Override to pace playback."""
+        return 0.0
+
     def run(self) -> None:
         options = mp_vision.PoseLandmarkerOptions(
             base_options=mp_tasks.BaseOptions(model_asset_path=MODEL_PATH),
@@ -253,6 +368,7 @@ class _AnalysisWorker:
         try:
             with mp_vision.PoseLandmarker.create_from_options(options) as landmarker:
                 while not self._stop.is_set():
+                    frame_start = time.perf_counter()
                     ret, frame = cap.read()
                     if not ret:
                         break
@@ -278,6 +394,13 @@ class _AnalysisWorker:
                         )
                     except queue.Full:
                         pass
+
+                    delay = self._frame_delay_s(cap)
+                    if delay > 0:
+                        elapsed = time.perf_counter() - frame_start
+                        remaining = delay - elapsed
+                        if remaining > 0:
+                            time.sleep(remaining)
         finally:
             cap.release()
             self._queue.put(("done", detector.count))

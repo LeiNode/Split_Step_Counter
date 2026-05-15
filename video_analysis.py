@@ -23,3 +23,7 @@ class VideoAnalysis(_AnalysisWorker):
 
     def _timestamp_ms(self, cap: cv2.VideoCapture) -> int:
         return int(cap.get(cv2.CAP_PROP_POS_MSEC))
+
+    def _frame_delay_s(self, cap: cv2.VideoCapture) -> float:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        return 1.0 / fps if fps > 0 else 0.0
