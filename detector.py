@@ -265,6 +265,16 @@ class SplitStepDetector:
                 return False  # this arm is too straight — block the count
         return True
 
+    @staticmethod
+    def _feet_at_similar_height(landmarks) -> bool:
+        """Both ankles must be within MAX_FOOT_HEIGHT_DIFF metres of each other vertically.
+        During a running cross-step the swing ankle is much higher than the stance ankle."""
+        la = landmarks[LEFT_ANKLE]
+        ra = landmarks[RIGHT_ANKLE]
+        if la.visibility < MIN_VISIBILITY or ra.visibility < MIN_VISIBILITY:
+            return True
+        return abs(la.y - ra.y) <= MAX_FOOT_HEIGHT_DIFF
+
     def process(self, landmarks) -> bool:
         """Process one frame's world landmarks. Returns True if a hop was just confirmed."""
         if not all(landmarks[i].visibility >= MIN_VISIBILITY for i in KEY_LANDMARKS):
@@ -302,6 +312,7 @@ class SplitStepDetector:
                 # Just took off: record whether the ready condition was met.
                 self._hop_was_valid   = (ready
                                          and self._velocities_similar(self._tracker)
+                                         and self._feet_at_similar_height(landmarks)
                                          and self._hands_in_ready_position(landmarks)
                                          and self._wrists_close_together(landmarks)
                                          and self._elbows_bent(landmarks))
