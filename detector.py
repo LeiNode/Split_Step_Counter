@@ -20,10 +20,14 @@ MODEL_URL  = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/po
 MODEL_PATH = "pose_landmarker_full.task"
 
 # ── Landmark indices ───────────────────────────────────────────────────────────
-LEFT_HIP    = 23
-RIGHT_HIP   = 24
-LEFT_ANKLE  = 27
-RIGHT_ANKLE = 28
+LEFT_HIP         = 23
+RIGHT_HIP        = 24
+LEFT_ANKLE       = 27
+RIGHT_ANKLE      = 28
+LEFT_HEEL        = 29
+RIGHT_HEEL       = 30
+LEFT_FOOT_INDEX  = 31
+RIGHT_FOOT_INDEX = 32
 
 POSE_CONNECTIONS = [
     (0,1),(1,2),(2,3),(3,7),(0,4),(4,5),(5,6),(6,8),
@@ -35,10 +39,11 @@ POSE_CONNECTIONS = [
 
 # ── Tuning ─────────────────────────────────────────────────────────────────────
 MIN_VISIBILITY   = 0.5   # landmarks below this confidence are treated as out-of-frame
-LIFT_THRESHOLD   = 0.06  # metres shortened from max extension to consider foot in air
+LIFT_THRESHOLD   = 0.04  # metres above ground baseline to consider foot in air
 HOP_SYNC_WINDOW  = 0.20  # seconds between lifts to count as a simultaneous hop
 
-KEY_LANDMARKS = [LEFT_HIP, RIGHT_HIP, LEFT_ANKLE, RIGHT_ANKLE]
+KEY_LANDMARKS = [LEFT_HIP, RIGHT_HIP, LEFT_ANKLE, RIGHT_ANKLE,
+                 LEFT_HEEL, RIGHT_HEEL, LEFT_FOOT_INDEX, RIGHT_FOOT_INDEX]
 
 GROUNDED      = "grounded"
 AIRBORNE      = "airborne"
@@ -105,8 +110,8 @@ def annotate_frame(frame: np.ndarray, det: "SplitStepDetector", hop: bool) -> No
 
 class FootStateTracker:
     def __init__(self):
-        self.max_left_len   = 0.0
-        self.max_right_len  = 0.0
+        self.left_ground_y  = None   # running minimum foot y (ground level)
+        self.right_ground_y = None
         self.left_lift_time  = 0.0
         self.right_lift_time = 0.0
         self.left_is_up  = False
@@ -115,25 +120,37 @@ class FootStateTracker:
     def reset(self):
         self.__init__()
 
+    @staticmethod
+    def _foot_y(lms, ankle, heel, toe) -> float:
+        """Average world-space y of ankle, heel, and toe (higher = more airborne)."""
+        return (lms[ankle].y + lms[heel].y + lms[toe].y) / 3
+
     def process_frame(self, world_landmarks) -> str:
         current_time = time.time()
 
-        l_hip   = np.array([world_landmarks[LEFT_HIP].x,   world_landmarks[LEFT_HIP].y,   world_landmarks[LEFT_HIP].z])
-        r_hip   = np.array([world_landmarks[RIGHT_HIP].x,  world_landmarks[RIGHT_HIP].y,  world_landmarks[RIGHT_HIP].z])
-        l_ankle = np.array([world_landmarks[LEFT_ANKLE].x,  world_landmarks[LEFT_ANKLE].y,  world_landmarks[LEFT_ANKLE].z])
-        r_ankle = np.array([world_landmarks[RIGHT_ANKLE].x, world_landmarks[RIGHT_ANKLE].y, world_landmarks[RIGHT_ANKLE].z])
+        left_y  = self._foot_y(world_landmarks, LEFT_ANKLE,  LEFT_HEEL,  LEFT_FOOT_INDEX)
+        right_y = self._foot_y(world_landmarks, RIGHT_ANKLE, RIGHT_HEEL, RIGHT_FOOT_INDEX)
 
-        dist_left  = np.linalg.norm(l_hip - l_ankle)
-        dist_right = np.linalg.norm(r_hip - r_ankle)
+        # Adaptive ground baseline:
+        #   - foot at or below baseline → fast EMA (α=0.10) tracks the ground
+        #   - foot above baseline → hold steady; only a tiny drift (α=0.02) so a
+        #     stuck-high calibration self-corrects in ~1-2 s without chasing the
+        #     rising foot and delaying detection.
+        if self.left_ground_y is None:
+            self.left_ground_y  = left_y
+            self.right_ground_y = right_y
+        else:
+            for side in ("left", "right"):
+                fy = left_y  if side == "left" else right_y
+                gy = self.left_ground_y if side == "left" else self.right_ground_y
+                new_gy = 0.10 * fy + 0.90 * gy if fy <= gy else 0.02 * fy + 0.98 * gy
+                if side == "left":
+                    self.left_ground_y  = new_gy
+                else:
+                    self.right_ground_y = new_gy
 
-        self.max_left_len  = max(self.max_left_len,  dist_left)
-        self.max_right_len = max(self.max_right_len, dist_right)
-
-        if self.max_left_len == 0 or self.max_right_len == 0:
-            return "Calibrating..."
-
-        left_lifted_now  = (self.max_left_len  - dist_left)  > LIFT_THRESHOLD
-        right_lifted_now = (self.max_right_len - dist_right) > LIFT_THRESHOLD
+        left_lifted_now  = (left_y  - self.left_ground_y)  > LIFT_THRESHOLD
+        right_lifted_now = (right_y - self.right_ground_y) > LIFT_THRESHOLD
 
         if left_lifted_now and not self.left_is_up:
             self.left_lift_time = current_time
@@ -172,9 +189,6 @@ class SplitStepDetector:
 
         result = self._tracker.process_frame(landmarks)
 
-        if result == "Calibrating...":
-            return False
-
         prev_state = self.state
 
         if result == "HOP DETECTED":
@@ -188,7 +202,7 @@ class SplitStepDetector:
         else:
             self.state = GROUNDED
 
-        hop = self.state == AIRBORNE and prev_state == GROUNDED
+        hop = self.state == AIRBORNE and prev_state in (GROUNDED, LEFT_LEG_UP, RIGHT_LEG_UP)
         if hop:
             self.count += 1
 
