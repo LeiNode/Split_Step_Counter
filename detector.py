@@ -55,6 +55,8 @@ TORSO_BOX_MARGIN     = 0.20 # metres of extra padding added to each side of the 
 WRIST_PROXIMITY      = 0.55 # max 3-D distance (metres) between wrists to count as close together
 MAX_ELBOW_ANGLE      = 155  # degrees; above this an arm is too extended for a ready stance
 MAX_FOOT_HEIGHT_DIFF = 0.20 # max y-gap (metres) between ankles at takeoff; running cross-steps exceed this
+HOP_COOLDOWN        = 0.8  # seconds after a counted hop during which no new hop can be counted
+HIP_DESCEND_MAX     = 0.005 # max downward hip velocity (normalised image y / frame) before a hop is blocked
 
 KEY_LANDMARKS = [LEFT_HIP, RIGHT_HIP, LEFT_ANKLE, RIGHT_ANKLE,
                  LEFT_HEEL, RIGHT_HEEL, LEFT_FOOT_INDEX, RIGHT_FOOT_INDEX]
@@ -138,6 +140,11 @@ class FootStateTracker:
     def reset(self):
         self.__init__()
 
+    def reset_velocities(self) -> None:
+        """Zero all EMA velocity estimates on landing so residual momentum can't trigger a phantom hop."""
+        for k in self._vel:
+            self._vel[k] = 0.0
+
     @property
     def left_vel(self) -> float:
         return sum(self._vel[i] for i in self._LEFT_LANDMARKS) / 3
@@ -199,6 +206,10 @@ class SplitStepDetector:
         self._last_grnd_streak = 0
         self._airborne_frames  = 0
         self._hop_was_valid    = False
+        self._hop_counted      = False
+        self._last_hop_time    = 0.0
+        self._prev_hip_y_img   = None
+        self._hip_vel_y_img    = 0.0
 
     @staticmethod
     def _velocities_similar(tracker: "FootStateTracker") -> bool:
@@ -275,10 +286,25 @@ class SplitStepDetector:
             return True
         return abs(la.y - ra.y) <= MAX_FOOT_HEIGHT_DIFF
 
-    def process(self, landmarks) -> bool:
-        """Process one frame's world landmarks. Returns True if a hop was just confirmed."""
+    def process(self, landmarks, image_lms=None) -> bool:
+        """Process one frame's landmarks. Returns True if a hop was just confirmed.
+
+        landmarks     — pose_world_landmarks (metres, hip-relative)
+        image_lms     — pose_landmarks (normalised image coords, optional)
+        """
         if not all(landmarks[i].visibility >= MIN_VISIBILITY for i in KEY_LANDMARKS):
             return False
+
+        # Track hip vertical velocity in image space (y increases downward).
+        # A positive value means the hip is descending — the player is squatting,
+        # not jumping — so we use this to veto false airborne detections.
+        if image_lms is not None:
+            hip_y = (image_lms[LEFT_HIP].y + image_lms[RIGHT_HIP].y) / 2
+            if self._prev_hip_y_img is not None:
+                raw = hip_y - self._prev_hip_y_img
+                self._hip_vel_y_img = (VEL_EMA_ALPHA * raw
+                                       + (1 - VEL_EMA_ALPHA) * self._hip_vel_y_img)
+            self._prev_hip_y_img = hip_y
 
         result = self._tracker.process_frame(landmarks)
 
@@ -296,6 +322,8 @@ class SplitStepDetector:
         # ── Grounded streak ──────────────────────────────────────────────────
         if self.state == GROUNDED:
             self._grounded_streak += 1
+            if prev_state != GROUNDED:
+                self._tracker.reset_velocities()
         else:
             if prev_state == GROUNDED:
                 self._last_grnd_streak = self._grounded_streak
@@ -305,28 +333,35 @@ class SplitStepDetector:
         ready = (self._grounded_streak  >= MIN_GROUNDED_FRAMES or
                  self._last_grnd_streak >= MIN_GROUNDED_FRAMES)
 
-        # ── Airborne duration + landing confirmation ─────────────────────────
+        # ── Airborne duration + takeoff confirmation ──────────────────────────
         hop = False
         if self.state == AIRBORNE:
             if prev_state != AIRBORNE:
-                # Just took off: record whether the ready condition was met.
-                self._hop_was_valid   = (ready
+                # Just took off: evaluate all gate conditions now.
+                in_cooldown   = (time.time() - self._last_hop_time) < HOP_COOLDOWN
+                hip_dropping  = self._hip_vel_y_img > HIP_DESCEND_MAX
+                self._hop_was_valid   = (not in_cooldown
+                                         and not hip_dropping
+                                         and ready
                                          and self._velocities_similar(self._tracker)
                                          and self._feet_at_similar_height(landmarks)
                                          and self._hands_in_ready_position(landmarks)
                                          and self._wrists_close_together(landmarks)
                                          and self._elbows_bent(landmarks))
-                self._grounded_streak = 0
+                self._grounded_streak  = 0
                 self._last_grnd_streak = 0
+                self._airborne_frames  = 0
+                self._hop_counted      = False
             self._airborne_frames += 1
-        elif prev_state == AIRBORNE:
-            # Just landed: confirm the hop only if it was valid AND long enough
-            # to distinguish a real hop from a brief lateral weight transfer.
-            if self._hop_was_valid and self._airborne_frames >= MIN_AIRBORNE_FRAMES:
+            if self._hop_was_valid and self._airborne_frames == MIN_AIRBORNE_FRAMES:
                 self.count += 1
                 hop = True
+                self._hop_counted  = True
+                self._last_hop_time = time.time()
+        elif prev_state == AIRBORNE:
             self._airborne_frames = 0
             self._hop_was_valid   = False
+            self._hop_counted     = False
 
         return hop
 
@@ -390,10 +425,11 @@ class _AnalysisWorker:
                     result = landmarker.detect_for_video(mp_img, ts)
 
                     hop = False
-                    if result.pose_landmarks:
-                        draw_landmarks(frame, result.pose_landmarks[0])
+                    img_lms = result.pose_landmarks[0] if result.pose_landmarks else None
+                    if img_lms:
+                        draw_landmarks(frame, img_lms)
                     if result.pose_world_landmarks:
-                        hop = detector.process(result.pose_world_landmarks[0])
+                        hop = detector.process(result.pose_world_landmarks[0], img_lms)
 
                     annotate_frame(frame, detector, hop)
                     display = fit_frame(frame, CANVAS_W, CANVAS_H)
