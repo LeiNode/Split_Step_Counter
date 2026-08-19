@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+ml_env/
+
+# Downloaded / generated model artifacts
+models/pose_landmarker_full.task
+*.npy
+
+# Large recorded assets (kept on disk, not in git history)
+assets/split_step_videos/
+assets/csv_files/

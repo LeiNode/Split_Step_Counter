@@ -12,9 +12,9 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageTk
 
-from detector import CANVAS_W, CANVAS_H, AIRBORNE, LEFT_LEG_UP, RIGHT_LEG_UP
-from live_view_analysis import LiveViewAnalysis
-from video_analysis import VideoAnalysis
+from .detector import CANVAS_W, CANVAS_H, AIRBORNE, LEFT_LEG_UP, RIGHT_LEG_UP
+from .live_view_analysis import LiveViewAnalysis
+from .video_analysis import VideoAnalysis
 
 
 class App:
@@ -40,6 +40,7 @@ class App:
         self._worker: threading.Thread | None = None
         self._photo:  ImageTk.PhotoImage | None = None
         self._video_path: str | None          = None
+        self._use_lstm: tk.BooleanVar         = tk.BooleanVar(value=False)
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -77,6 +78,14 @@ class App:
                                       activebackground=self.PURPLE,
                                       activeforeground="white")
         self._btn_process.pack(fill=tk.X, pady=(0, 4))
+
+        tk.Checkbutton(ctrl, text="Use LSTM model",
+                       variable=self._use_lstm,
+                       bg=self.BG, fg=self.FG_DIM,
+                       selectcolor=self.BG2,
+                       activebackground=self.BG,
+                       activeforeground=self.FG,
+                       font=("Helvetica", 9)).pack(anchor=tk.W, pady=(0, 4))
 
         ttk.Separator(ctrl, orient="horizontal").pack(fill=tk.X, pady=16)
 
@@ -145,7 +154,8 @@ class App:
 
     def _start_video(self):
         if self._video_path:
-            self._launch(VideoAnalysis(self._video_path, self._queue, self._stop))
+            self._launch(VideoAnalysis(self._video_path, self._queue, self._stop,
+                                       use_lstm=self._use_lstm.get()))
 
     def _start_live(self):
         self._launch(LiveViewAnalysis(self._queue, self._stop))

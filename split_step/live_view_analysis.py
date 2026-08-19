@@ -10,7 +10,7 @@ import time
 
 import cv2
 
-from detector import _AnalysisWorker
+from .detector import _AnalysisWorker
 
 
 class LiveViewAnalysis(_AnalysisWorker):

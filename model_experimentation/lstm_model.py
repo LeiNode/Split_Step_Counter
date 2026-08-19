@@ -14,6 +14,7 @@ Install PyTorch before use:
 
 import json
 import pathlib
+import sys
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -21,7 +22,9 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
-from detector import (
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+
+from split_step.detector import (
     LEFT_ANKLE, LEFT_HEEL, LEFT_FOOT_INDEX,
     RIGHT_ANKLE, RIGHT_HEEL, RIGHT_FOOT_INDEX,
     LEFT_HIP, RIGHT_HIP,

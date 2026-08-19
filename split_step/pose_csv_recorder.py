@@ -56,7 +56,7 @@ class PoseCSVRecorder:
 
     def __init__(self, output_dir: str = ASSETS_DIR):
         os.makedirs(output_dir, exist_ok=True)
-        self.path    = os.path.join(output_dir, "pose1.csv")
+        self.path    = os.path.join(output_dir, "sideview1.csv")
         self._file   = open(self.path, "w", newline="", encoding="utf-8")
         self._writer = csv.writer(self._file)
         self._frame  = 0
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     import mediapipe as mp
     from mediapipe.tasks import python as mp_tasks
     from mediapipe.tasks.python import vision as mp_vision
-    from detector import download_model, MODEL_PATH, SplitStepDetector
+    from .detector import download_model, MODEL_PATH, SplitStepDetector
 
     parser = argparse.ArgumentParser(description="Record pose landmarks from a video to CSV.")
     parser.add_argument("video", help="Path to the input video file")

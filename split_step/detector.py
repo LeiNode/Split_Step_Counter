@@ -17,7 +17,7 @@ from mediapipe.tasks.python import vision as mp_vision
 
 # ── Model ──────────────────────────────────────────────────────────────────────
 MODEL_URL  = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
-MODEL_PATH = "pose_landmarker_full.task"
+MODEL_PATH = "models/pose_landmarker_full.task"
 
 # ── Landmark indices ───────────────────────────────────────────────────────────
 LEFT_SHOULDER    = 11
@@ -74,6 +74,7 @@ CANVAS_H = 480
 
 def download_model() -> None:
     if not os.path.exists(MODEL_PATH):
+        os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
         print(f"Downloading pose model to {MODEL_PATH} …")
         urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
         print("Download complete.")
@@ -396,6 +397,9 @@ class _AnalysisWorker:
         """Seconds to wait after processing each frame. Override to pace playback."""
         return 0.0
 
+    def _make_detector(self) -> "SplitStepDetector":
+        return SplitStepDetector()
+
     def run(self) -> None:
         options = mp_vision.PoseLandmarkerOptions(
             base_options=mp_tasks.BaseOptions(model_asset_path=MODEL_PATH),
@@ -404,7 +408,7 @@ class _AnalysisWorker:
             min_pose_detection_confidence=0.5,
             min_tracking_confidence=0.5,
         )
-        detector = SplitStepDetector()
+        detector = self._make_detector()
         cap = cv2.VideoCapture(self._source())
 
         if not cap.isOpened():

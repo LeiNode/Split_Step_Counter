@@ -9,14 +9,21 @@ import threading
 
 import cv2
 
-from detector import _AnalysisWorker
+from .detector import _AnalysisWorker
 
 
 class VideoAnalysis(_AnalysisWorker):
     def __init__(self, video_path: str, frame_queue: queue.Queue,
-                 stop_event: threading.Event):
+                 stop_event: threading.Event, use_lstm: bool = False):
         super().__init__(frame_queue, stop_event)
         self._video_path = video_path
+        self._use_lstm   = use_lstm
+
+    def _make_detector(self):
+        if self._use_lstm:
+            from .lstm_counter import LSTMCounter
+            return LSTMCounter()
+        return super()._make_detector()
 
     def _source(self):
         return self._video_path
