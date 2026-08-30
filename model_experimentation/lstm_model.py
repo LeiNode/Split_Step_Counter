@@ -33,6 +33,7 @@ from split_step.detector import (
     LEFT_WRIST, RIGHT_WRIST,
     GROUNDED, AIRBORNE, LEFT_LEG_UP, RIGHT_LEG_UP,
 )
+from split_step.paths import SPLIT_STEP_LSTM_PATH
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -149,7 +150,7 @@ class SplitStepLSTM(nn.Module):
 def train(
     feature_frames: List[np.ndarray],
     label_frames:   List[int],
-    model_path:     str   = "split_step_lstm.pt",
+    model_path:     str   = SPLIT_STEP_LSTM_PATH,
     seq_len:        int   = SEQ_LEN,
     epochs:         int   = 40,
     batch_size:     int   = 32,
@@ -206,6 +207,7 @@ def train(
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
+            pathlib.Path(model_path).parent.mkdir(parents=True, exist_ok=True)
             torch.save(model.state_dict(), model_path)
 
     print(f"Best val_acc={best_val_acc:.3f} — model saved → {model_path}")
@@ -219,13 +221,13 @@ class Predictor:
 
     Usage
     -----
-        predictor = Predictor("split_step_lstm.pt")
+        predictor = Predictor()
         label, confidence = predictor.update(world_landmarks)
     """
 
     def __init__(
         self,
-        model_path: str = "split_step_lstm.pt",
+        model_path: str = SPLIT_STEP_LSTM_PATH,
         seq_len:    int = SEQ_LEN,
         device:     Optional[str] = None,
     ):

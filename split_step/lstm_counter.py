@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 
 from .detector import GROUNDED, AIRBORNE
+from .paths import SPLIT_STEP_LSTM_PATH, FEAT_MEAN_PATH, FEAT_STD_PATH
 
 # MediaPipe landmark indices matching the notebook's FEATURE_LANDMARK_NAMES order
 _LANDMARK_INDICES = [
@@ -68,9 +69,9 @@ class LSTMCounter:
 
     def __init__(
         self,
-        model_path: str = "models/split_step_lstm.pt",
-        mean_path:  str = "models/feat_mean.npy",
-        std_path:   str = "models/feat_std.npy",
+        model_path: str = SPLIT_STEP_LSTM_PATH,
+        mean_path:  str = FEAT_MEAN_PATH,
+        std_path:   str = FEAT_STD_PATH,
         device:     Optional[str] = None,
     ):
         if device is None:
@@ -89,7 +90,6 @@ class LSTMCounter:
         self.count   = 0
         self.state   = GROUNDED
         self._buf    = deque(maxlen=_SEQ_LEN)
-        self._prev   = None
         self._active = False
         self._last_t = 0.0
 
@@ -102,16 +102,20 @@ class LSTMCounter:
                          world_landmarks[idx].z)],
             dtype=np.float32,
         )
-        vel = pos - self._prev if self._prev is not None else np.zeros_like(pos)
-        self._prev = pos
-
-        frame = (np.concatenate([pos, vel]) - self._mean) / self._std
-        self._buf.append(frame)
+        self._buf.append(pos)
 
         if len(self._buf) < _SEQ_LEN:
             return False
 
-        x = torch.from_numpy(np.stack(self._buf)).unsqueeze(0).to(self.device)
+        # Velocities are computed within the window, matching build_windows()
+        # in the training notebook: the window's first frame always gets
+        # velocity 0, regardless of what came before it in the stream.
+        positions  = np.stack(self._buf)
+        velocities = np.zeros_like(positions)
+        velocities[1:] = positions[1:] - positions[:-1]
+        seq = (np.concatenate([positions, velocities], axis=1) - self._mean) / self._std
+
+        x = torch.from_numpy(seq).unsqueeze(0).to(self.device)
         with torch.no_grad():
             prob = torch.sigmoid(self._model(x)).item()
 
@@ -132,6 +136,5 @@ class LSTMCounter:
         self.count   = 0
         self.state   = GROUNDED
         self._buf.clear()
-        self._prev   = None
         self._active = False
         self._last_t = 0.0

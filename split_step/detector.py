@@ -15,9 +15,11 @@ import numpy as np
 from mediapipe.tasks import python as mp_tasks
 from mediapipe.tasks.python import vision as mp_vision
 
+from .paths import POSE_LANDMARKER_PATH
+
 # ── Model ──────────────────────────────────────────────────────────────────────
 MODEL_URL  = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
-MODEL_PATH = "models/pose_landmarker_full.task"
+MODEL_PATH = POSE_LANDMARKER_PATH
 
 # ── Landmark indices ───────────────────────────────────────────────────────────
 LEFT_SHOULDER    = 11

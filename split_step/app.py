@@ -40,7 +40,7 @@ class App:
         self._worker: threading.Thread | None = None
         self._photo:  ImageTk.PhotoImage | None = None
         self._video_path: str | None          = None
-        self._use_lstm: tk.BooleanVar         = tk.BooleanVar(value=False)
+        self._use_lstm: tk.BooleanVar         = tk.BooleanVar(value=True)
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -158,7 +158,8 @@ class App:
                                        use_lstm=self._use_lstm.get()))
 
     def _start_live(self):
-        self._launch(LiveViewAnalysis(self._queue, self._stop))
+        self._launch(LiveViewAnalysis(self._queue, self._stop,
+                                      use_lstm=self._use_lstm.get()))
 
     def _request_stop(self):
         self._stop.set()
