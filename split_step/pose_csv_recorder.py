@@ -54,14 +54,16 @@ def _build_header() -> list:
 class PoseCSVRecorder:
     """Streams pose landmark data to assets/pose.csv, overwriting on each run."""
 
-    def __init__(self, output_dir: str = ASSETS_DIR):
+    def __init__(self, output_dir: str = ASSETS_DIR, output_name: str = "sideview1.csv",
+                 extra_columns: list | None = None):
         os.makedirs(output_dir, exist_ok=True)
-        self.path    = os.path.join(output_dir, "sideview1.csv")
-        self._file   = open(self.path, "w", newline="", encoding="utf-8")
-        self._writer = csv.writer(self._file)
-        self._frame  = 0
-        self._writer.writerow(_build_header())
-        print(f"Recording → {self.path}")
+        self.path          = os.path.join(output_dir, output_name)
+        self._file         = open(self.path, "w", newline="", encoding="utf-8")
+        self._writer       = csv.writer(self._file)
+        self._frame        = 0
+        self._extra_columns = extra_columns or []
+        self._writer.writerow(_build_header() + self._extra_columns)
+        print(f"Recording -> {self.path}")
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -71,6 +73,7 @@ class PoseCSVRecorder:
         image_landmarks,
         count:        int,
         timestamp_ms: int | None = None,
+        extra:        dict | None = None,
     ) -> None:
         """
         Append one row for the current frame.
@@ -79,6 +82,7 @@ class PoseCSVRecorder:
         image_landmarks — pose_landmarks[0]         (or None if unavailable)
         count           — detector.count int
         timestamp_ms    — video position or wall-clock ms (auto-filled if None)
+        extra           — values for the extra_columns passed to __init__
         """
         if timestamp_ms is None:
             timestamp_ms = int(time.time() * 1000)
@@ -101,6 +105,9 @@ class PoseCSVRecorder:
             else:
                 row += ["", ""]
 
+        for col in self._extra_columns:
+            row.append((extra or {}).get(col, ""))
+
         self._writer.writerow(row)
         self._frame += 1
 
@@ -108,7 +115,7 @@ class PoseCSVRecorder:
         """Flush and close the file."""
         self._file.flush()
         self._file.close()
-        print(f"Saved {self._frame} frames → {self.path}")
+        print(f"Saved {self._frame} frames -> {self.path}")
 
     # ── Context manager support ───────────────────────────────────────────────
 

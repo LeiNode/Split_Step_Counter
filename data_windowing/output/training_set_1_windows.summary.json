@@ -1,0 +1,66 @@
+{
+  "inputs": {
+    "assets/csv_files/labeled_training_set_1.csv": {
+      "rows_in": 4181,
+      "rows_dropped_empty": 52,
+      "rows_kept": 4129
+    }
+  },
+  "window_ms": 300.0,
+  "seq_len": 9,
+  "min_frames": 5,
+  "median_frame_ms": 33.0,
+  "segments": 15,
+  "segments_too_short": 0,
+  "windows": 4069,
+  "positive_windows": 540,
+  "padded_windows": 57,
+  "feature_landmarks": [
+    "left_ankle",
+    "left_heel",
+    "left_foot_index",
+    "right_ankle",
+    "right_heel",
+    "right_foot_index",
+    "left_knee",
+    "right_knee",
+    "left_hip",
+    "right_hip",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_wrist",
+    "right_wrist"
+  ],
+  "per_video": {
+    "labeled_training_set_1:video_1": {
+      "windows": 373,
+      "positive": 26
+    },
+    "labeled_training_set_1:video_2": {
+      "windows": 699,
+      "positive": 52
+    },
+    "labeled_training_set_1:video_3": {
+      "windows": 150,
+      "positive": 17
+    },
+    "labeled_training_set_1:video_4": {
+      "windows": 440,
+      "positive": 177
+    },
+    "labeled_training_set_1:video_5": {
+      "windows": 352,
+      "positive": 28
+    },
+    "labeled_training_set_1:video_6": {
+      "windows": 718,
+      "positive": 58
+    },
+    "labeled_training_set_1:video_7": {
+      "windows": 1337,
+      "positive": 182
+    }
+  }
+}

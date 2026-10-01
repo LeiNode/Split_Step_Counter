@@ -1,0 +1,42 @@
+{
+  "inputs": {
+    "assets/csv_files/test_set_labeled.csv": {
+      "rows_in": 1369,
+      "rows_dropped_empty": 3,
+      "rows_kept": 1366
+    }
+  },
+  "window_ms": 300.0,
+  "seq_len": 9,
+  "min_frames": 5,
+  "median_frame_ms": 33.0,
+  "segments": 4,
+  "segments_too_short": 0,
+  "windows": 1350,
+  "positive_windows": 640,
+  "padded_windows": 16,
+  "feature_landmarks": [
+    "left_ankle",
+    "left_heel",
+    "left_foot_index",
+    "right_ankle",
+    "right_heel",
+    "right_foot_index",
+    "left_knee",
+    "right_knee",
+    "left_hip",
+    "right_hip",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_wrist",
+    "right_wrist"
+  ],
+  "per_video": {
+    "test_set_labeled:video_7": {
+      "windows": 1350,
+      "positive": 640
+    }
+  }
+}
