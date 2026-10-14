@@ -33,6 +33,20 @@ worked on right now, so they don't get lost.
 - **Keep gathering diverse training footage** — more matches, players,
   courts, and camera setups remains the primary lever for generalization,
   independent of any model/architecture change.
+- **Camera-angle imbalance, confirmed 2026-10-01**: measured per-video
+  shoulder lateral-spread vs. depth-spread across the training CSVs —
+  `labeled_training_set_2.csv` (the bulk of the data, mostly YouTube "Court
+  Level View" clips) is overwhelmingly front/back-angle footage despite
+  several filenames saying "side view" (those broadcast shots are filmed
+  down the court's center axis, not from the side). The near player (back to
+  camera) dominates the surviving frames; the far player (front view) is
+  small and often dropped by the visibility gate in
+  `build_labeled_dataset.py`; genuine side view is a small minority
+  (`video_1`/`video_3` in `labeled_training_set_1.csv`). User confirmed live
+  via the GUI: model performs well on back view, noticeably worse on side
+  and front view — matches the data composition. Next step if prioritized:
+  record/label footage specifically from side and front angles (not more
+  back-view "court level" clips) and retrain.
 
 ## Cleanup
 

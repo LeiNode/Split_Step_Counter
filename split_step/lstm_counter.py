@@ -48,7 +48,32 @@ LANDMARK_INDICES = [
 N_POS  = len(LANDMARK_INDICES) * 3   # 48  (x, y, z per landmark)
 N_FEAT = N_POS * 2                   # 96  (position + velocity)
 
-_THRESHOLD      = 0.8
+# Model size + threshold for the currently-deployed checkpoint ("Run 8" in
+# model_experimentation/refinement_log.md). Both must be updated together if
+# the checkpoint is ever replaced — the hidden size has to match whatever
+# split_step_lstm.pt was actually trained with, and the threshold has to come
+# from sweeping on a validation set (NEVER on test_set_labeled.csv's labels —
+# see the log's "CORRECTION" section for what happened the one time that rule
+# was broken: a 0.02 threshold picked by sweeping on test gave a fake 0.961
+# recall that evaporated to 0.062 under honest evaluation).
+#
+# Full search history (9 training runs: regularization, capacity, LR,
+# pos_weight, chunk length) found hidden_size to be the only lever that
+# mattered, with a non-monotonic sweet spot — this is NOT "smaller is always
+# better", recall peaked at 32 and partially reversed at 16:
+#   hidden_size  128   64    32    16
+#   recall      0.128 0.241 0.291 0.266
+#   precision   0.745 0.748 0.579 0.850
+# Run 8 (hidden_size=32) is deployed here for its higher recall, matching the
+# project's stated priority of catching hops over avoiding false positives.
+# Even so, honest held-out recall (0.291) is still slightly below the old
+# pre-redesign windowed model's (0.300) — this redesign has not yet
+# surpassed it. See refinement_log.md "FINAL SUMMARY" for the full picture
+# and why more/diverse training data, not further tuning, is the likely next
+# lever (TODO.md).
+_HIDDEN_SIZE    = 32
+_THRESHOLD      = 0.4    # val-selected for hidden_size=32 (Run 8) — re-sweep
+                         # on validation (never on test) if the checkpoint changes.
 _COOLDOWN       = 0.5    # seconds between counted events
 _GAP_THRESHOLD_S = 0.15  # a tracking gap longer than this isn't bridged with a velocity
 
@@ -113,7 +138,7 @@ class LSTMCounter:
         self._mean = np.load(mean_path)
         self._std  = np.load(std_path)
 
-        self._model = SplitStepLSTM().to(device)
+        self._model = SplitStepLSTM(hidden_size=_HIDDEN_SIZE).to(device)
         self._model.load_state_dict(
             torch.load(model_path, map_location=device, weights_only=True)
         )
