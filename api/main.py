@@ -126,7 +126,8 @@ class AnalysisOptions:
         if not counting and drill is None:
             raise HTTPException(status_code=400, detail="Split-step counting is disabled; choose a drill.")
         self.kwargs = dict(model=model, require_full_pose=require_full_pose, drill=drill, hand=hand,
-                           count_split_steps=counting, split_step_metrics=flags["split_step_metrics"])
+                           count_split_steps=counting, split_step_metrics=flags["split_step_metrics"],
+                           split_step_timing=flags["split_step_timing"])
 
 
 class CountResult(BaseModel):
@@ -136,6 +137,7 @@ class CountResult(BaseModel):
     session: dict | None = None
     frames_tracked: int | None = None
     strokes: dict | None = None
+    timing: dict | None = None
     frames: int
     frames_with_pose: int
     duration_ms: float

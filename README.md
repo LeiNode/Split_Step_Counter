@@ -14,6 +14,9 @@ analyses run on them:
 - **Stroke training.** Detects swings and gives feedback per stroke:
   - forehand / backhand: contact height, shoulder turn, follow-through, knee load
   - serve: reach, toss height, elbow extension, trophy-position knee bend
+- **Split step → shot timing.** Shows which shots had a split step
+  0.4–2.5 s before them. Hops that happen during a swing are flagged, not
+  counted as split steps.
 - **Coaching tips** in plain language, based on the metrics above.
 
 Use it four ways:
@@ -165,6 +168,7 @@ everywhere:
 | `stroke_training` | All stroke training (parent of the four below) |
 | `forehand_training`, `backhand_training`, `serve_training` | Each drill |
 | `auto_stroke_detection` | "Match play (auto)" mode |
+| `split_step_timing` | "Split step before shot": links each swing to the split step before it (needs counting and stroke training) |
 | `lstm_model`, `rules_model` | Each split-step model |
 | `direct_upload`, `browser_uploads` | API upload routes |
 | `live_view` | Webcam button in the desktop GUI |
@@ -329,6 +333,10 @@ main.py                      GUI entry point
 ```
 
 ## Known limitations
+
+- **Split-step timing inherits the counter's low recall.** "Only N of M
+  shots had a split step" undercounts whenever the detector misses a split
+  step.
 
 - **Recall is low.** The deployed LSTM catches about 29% of split-step frames
   on the held-out test set (see `refinement_log.md`), so counts run low.

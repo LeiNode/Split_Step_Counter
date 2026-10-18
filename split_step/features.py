@@ -28,6 +28,7 @@ DEFAULTS: dict[str, tuple[bool, str]] = {
     "backhand_training":   (True,  "Backhand drill"),
     "serve_training":      (True,  "Serve drill"),
     "auto_stroke_detection": (True, "'auto' drill: classify each swing (forehand/backhand is experimental)"),
+    "split_step_timing":   (True,  "Link split steps to the following shots (needs counting + stroke training)"),
     "lstm_model":          (True,  "LSTM split-step model"),
     "rules_model":         (True,  "Rule-based split-step model"),
     "direct_upload":       (True,  "API: POST /v1/count with the video in the request"),
@@ -35,13 +36,14 @@ DEFAULTS: dict[str, tuple[bool, str]] = {
     "live_view":           (True,  "Desktop GUI: webcam live view"),
 }
 
-# Child features are only on when their parent is on too.
+# Child features are only on when all their parents are on too.
 PARENTS = {
-    "forehand_training": "stroke_training",
-    "backhand_training": "stroke_training",
-    "serve_training": "stroke_training",
-    "auto_stroke_detection": "stroke_training",
-    "split_step_metrics": "split_step_counting",
+    "forehand_training": ("stroke_training",),
+    "backhand_training": ("stroke_training",),
+    "serve_training": ("stroke_training",),
+    "auto_stroke_detection": ("stroke_training",),
+    "split_step_metrics": ("split_step_counting",),
+    "split_step_timing": ("split_step_counting", "stroke_training"),
 }
 
 _TRUE  = {"1", "true", "on", "yes"}
@@ -87,8 +89,8 @@ def all_features() -> dict[str, bool]:
             _check(name)
             flags[name] = _parse_bool(name, value)
 
-    for child, parent in PARENTS.items():
-        flags[child] = flags[child] and flags[parent]
+    for child, parents in PARENTS.items():
+        flags[child] = flags[child] and all(flags[p] for p in parents)
     return flags
 
 

@@ -233,6 +233,7 @@
       ...(s.landing_knee_angle ? [stat("Landing knee bend", fmt(s.landing_knee_angle.median, 0, "°"))] : []),
     );
     const cols = [["Time", (e) => seekLink(e.timestamp_ms)]];
+    if (res.timing) cols.push(["", (e) => e.during_swing ? "hop during a swing" : ""]);
     if (res.session) cols.push(
       ["Hop height", (e) => fmt(e.hop_height)],
       ["Knee angle", (e) => fmt(e.landing_knee_angle, 0, "°")],
@@ -248,14 +249,17 @@
     const st = res.strokes, serve = st.drill === "serve";
     $("stroke-title").textContent = st.drill === "auto" ? "Strokes" : st.drill[0].toUpperCase() + st.drill.slice(1) + " training";
     const counts = Object.entries(st.summary).map(([k, v]) => stat(k[0].toUpperCase() + k.slice(1) + "s", v.count));
-    $("stroke-stats").replaceChildren(stat("Swings", st.swings.length), stat("Hand", st.hand), ...counts);
+    const t = res.timing;
+    $("stroke-stats").replaceChildren(stat("Swings", st.swings.length), stat("Hand", st.hand), ...counts,
+      ...(t && t.shots ? [stat("Split step before shot", `${t.shots_with_split_step} of ${t.shots}`)] : []));
     const cols = [["Time", (s) => seekLink(s.timestamp_ms)], ["Stroke", (s) => s.stroke], ["Wrist speed", (s) => fmt(s.peak_wrist_speed, 1, " m/s")]];
     if (serve) cols.push(["Reach", (s) => fmt(s.contact_reach_m, 2, " m")], ["Toss", (s) => fmt(s.toss_height_m, 2, " m")],
                          ["Elbow", (s) => fmt(s.elbow_extension, 0, "°")], ["Trophy knee", (s) => fmt(s.trophy_knee_angle, 0, "°")]);
     else cols.push(["Contact height", (s) => fmt(s.contact_height)], ["Shoulder turn", (s) => fmt(s.shoulder_turn_deg, 0, "°")],
                    ["Finish", (s) => fmt(s.finish_above_shoulder_m, 2, " m")], ["Knee load", (s) => fmt(s.load_knee_angle, 0, "°")]);
+    if (t) cols.push(["Split step before", (s) => s.split_step_lead_ms == null ? "none" : fmt(s.split_step_lead_ms / 1000, 1, " s")]);
     fillTable($("stroke-table"), cols, st.swings);
-    fillTips($("stroke-tips"), st.tips);
+    fillTips($("stroke-tips"), [...st.tips, ...(t ? t.tips : [])]);
   }
 
   // ── Wiring ───────────────────────────────────────────────────────────────

@@ -65,6 +65,9 @@ function chooseFile(dom) {
   check(doc.querySelectorAll("#stroke-table tr").length === analysis.strokes.swings.length + 1, "one row per swing");
   check(doc.getElementById("stroke-table").textContent.includes("backhand"), "stroke types rendered");
   check(doc.getElementById("stroke-tips").children.length > 0, "stroke tips rendered");
+  check(doc.getElementById("stroke-stats").textContent.includes("Split step before shot"), "timing stat shown");
+  check(doc.getElementById("stroke-table").textContent.includes("Split step before"), "lead-time column shown");
+  check(doc.getElementById("split-table").textContent.includes("hop during a swing"), "swing hops marked");
   const link = doc.querySelector("#split-table a.ts");
   link.click();
   check(Math.abs(doc.getElementById("player").currentTime - Math.max(0, analysis.events[0].timestamp_ms / 1000 - 1)) < 0.01,
