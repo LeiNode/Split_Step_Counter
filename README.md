@@ -23,6 +23,9 @@ analyses run on them:
 - **Split step → shot timing.** Shows which shots had a split step
   0.4–2.5 s before them. Hops that happen during a swing are flagged, not
   counted as split steps.
+- **Camera-angle check.** Detects whether the player is filmed from
+  behind, the front or the side, and warns when the split-step model is less
+  reliable for that view.
 - **Coaching tips** in plain language, based on the metrics above.
 
 Use it four ways:
@@ -179,6 +182,7 @@ everywhere:
 |---|---|
 | `split_step_counting` | Split-step counting (parent of `split_step_metrics`) |
 | `split_step_metrics` | Per-split-step quality metrics and session summary |
+| `camera_view_check` | Detect the camera angle; warn when it's one the model handles poorly |
 | `stroke_training` | All stroke training (parent of the four below) |
 | `forehand_training`, `backhand_training`, `serve_training` | Each drill |
 | `auto_stroke_detection` | "Match play (auto)" mode |

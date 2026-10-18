@@ -61,6 +61,8 @@ function chooseFile(dom) {
   check(countCall && countCall.includes("drill=auto") && countCall.includes("model=rules") && countCall.includes("hand=auto"),
         "falls back to direct upload with drill/model/hand: " + countCall);
   check(!doc.getElementById("split-results").hidden, "split-step results shown");
+  check(!doc.getElementById("camera-notice").hidden && doc.getElementById("camera-notice").textContent.includes("film from behind"),
+        "camera-angle warning shown");
   check(doc.querySelectorAll("#split-table tr").length === analysis.events.length + 1, "one split-step row per event");
   check(!doc.getElementById("stroke-results").hidden, "stroke results shown");
   check(doc.querySelectorAll("#stroke-table tr").length === analysis.strokes.swings.length + 1, "one row per swing");

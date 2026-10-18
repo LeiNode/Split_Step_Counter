@@ -355,9 +355,20 @@
     "median_recovery_ms": 566.7,
     "tips": []
   },
+  "camera": {
+    "view": "side",
+    "fractions": {
+      "back": 0.196,
+      "front": 0.395,
+      "side": 0.409
+    },
+    "tips": [
+      "Most of this video shows the player from the side. The split-step model was trained mainly on footage filmed from behind the player, so split-step counts may be less reliable here. For best results, film from behind the baseline."
+    ]
+  },
   "frames": 572,
   "frames_with_pose": 572,
   "duration_ms": 19033.3,
   "fps": 30.0,
-  "processing_s": 8.246
+  "processing_s": 8.293
 }

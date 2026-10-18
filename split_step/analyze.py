@@ -28,6 +28,7 @@ from .detector import download_model, make_pose_landmarker, detect_pose, SplitSt
 from .pose_track import PoseTrackBuilder
 from .strokes import DRILLS, HANDS, stroke_report
 from .tennis_metrics import session_summary, split_step_quality
+from .camera_view import camera_report
 from .rallies import find_rallies
 from .ready_position import recovery
 from .timing import link_split_steps
@@ -52,7 +53,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                   drill: str | None = None, hand: str = "auto",
                   count_split_steps: bool = True, split_step_metrics: bool = True,
                   split_step_timing: bool = True, rally_stats: bool = True,
-                  include_pose: bool = False, ready_position: bool = True) -> dict:
+                  include_pose: bool = False, ready_position: bool = True,
+                  camera_view_check: bool = True) -> dict:
     """Analyse a video file.
 
     model              — split-step counter: "lstm" (GUI default) or "rules"
@@ -68,6 +70,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     rally_stats        — with a drill: group swings into rallies (see rallies.py)
     include_pose       — also return the per-frame skeleton (PoseTrack.export_skeleton)
     ready_position     — with a drill: recovery to a ready stance after each shot
+    camera_view_check  — report the camera angle (camera_view.py)
 
     Returns a JSON-serialisable dict. Always present:
         frames, frames_with_pose, duration_ms, fps, processing_s
@@ -85,6 +88,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     With a drill and ready_position:
         recovery — recovery(): share of shots recovered from + median time;
                    adds swings[].recovery_ms
+    With camera_view_check:
+        camera  — dominant view (back/front/side), per-view shares, warning tip
     With include_pose:
         pose    — per-frame image-space skeleton for drawing overlays
     Raises VideoError if the file can't be opened or has no frames.
@@ -160,6 +165,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
             result["recovery"] = recovery(pose_track, result["strokes"]["swings"])
     if include_pose:
         result["pose"] = pose_track.export_skeleton()
+    if camera_view_check:
+        result["camera"] = camera_report(pose_track)
 
     result.update({
         "frames":           frames,

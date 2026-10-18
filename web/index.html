@@ -57,6 +57,7 @@
     .k-split { background: #2f9e5b; } .k-forehand { background: #2b6cb0; } .k-backhand { background: #8a4fbf; }
     .k-serve { background: #d9822b; } .k-unknown { background: #8a948f; }
     .linkish { background: none; color: var(--dim); border: 1px solid var(--line); padding: .3rem .7rem; font-weight: 400; }
+    .notice { border-color: var(--warn); color: var(--warn); }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -108,6 +109,8 @@
       <div class="legend" id="legend"></div>
     </div>
   </section>
+
+  <section class="card notice" id="camera-notice" hidden></section>
 
   <section class="card" id="split-results" hidden>
     <h2>Split steps</h2>
@@ -468,6 +471,9 @@
     try {
       const res = await analyse(file);
       status(`Done in ${res.processing_s}s · ${res.frames} frames`);
+      const camTips = (res.camera && res.camera.tips) || [];
+      $("camera-notice").textContent = camTips.join(" ");
+      $("camera-notice").hidden = !camTips.length;
       renderSplit(res);
       renderStrokes(res);
       renderTimeline(res);
