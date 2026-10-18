@@ -1,0 +1,92 @@
+"""Stroke detection on synthetic swings (a right-handed player, 30 fps)."""
+
+import numpy as np
+import pytest
+
+from split_step.detector import (
+    LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_ELBOW, RIGHT_ELBOW, LEFT_WRIST, RIGHT_WRIST,
+    LEFT_HIP, RIGHT_HIP, LEFT_KNEE, RIGHT_KNEE, LEFT_ANKLE, RIGHT_ANKLE,
+)
+from split_step.pose_track import PoseTrack
+from split_step.strokes import NOSE, detect_hand, stroke_report
+
+FPS = 30.0
+
+
+def _body(n):
+    """Standing player, x = player's right, y down (metres, hip-relative)."""
+    w = np.zeros((n, 33, 4), np.float32)
+    w[..., 3] = 1.0
+    pts = {NOSE: (0, -0.65, 0), LEFT_SHOULDER: (-0.2, -0.5, 0), RIGHT_SHOULDER: (0.2, -0.5, 0),
+           LEFT_ELBOW: (-0.3, -0.25, 0), RIGHT_ELBOW: (0.3, -0.25, 0),
+           LEFT_WRIST: (-0.3, -0.05, 0), RIGHT_WRIST: (0.3, -0.05, 0),
+           LEFT_HIP: (-0.1, 0, 0), RIGHT_HIP: (0.1, 0, 0), LEFT_KNEE: (-0.12, 0.45, 0),
+           RIGHT_KNEE: (0.12, 0.45, 0), LEFT_ANKLE: (-0.14, 0.9, 0), RIGHT_ANKLE: (0.14, 0.9, 0)}
+    for j, p in pts.items():
+        w[:, j, :3] = p
+    return w
+
+
+def _track(w):
+    n = len(w)
+    img = np.full((n, 33, 3), 0.5, np.float32)
+    return PoseTrack(ts_ms=np.arange(n) * 1000 / FPS, world=w, image=img, aspect=1.0)
+
+
+def _groundstroke(w, at, start_x, end_x, frames=6):
+    """Swing the right wrist from start_x to end_x (player-lateral) centred on frame `at`."""
+    w[: at - frames // 2, RIGHT_WRIST, 0] = start_x
+    xs = np.linspace(start_x, end_x, frames)
+    w[at - frames // 2: at + frames // 2, RIGHT_WRIST, 0] = xs
+    w[at + frames // 2:, RIGHT_WRIST, 0] = end_x
+    # chest-height contact and a high finish
+    w[at - frames // 2: at + frames // 2, RIGHT_WRIST, 1] = np.linspace(-0.1, -0.6, frames)
+    w[at + frames // 2:, RIGHT_WRIST, 1] = -0.6
+
+
+def test_forehand_detected_and_classified():
+    w = _body(90)
+    _groundstroke(w, 45, start_x=0.6, end_x=-0.5)       # right side -> across to the left
+    r = stroke_report(_track(w), "auto", "right")
+    assert [s["stroke"] for s in r["swings"]] == ["forehand"]
+    s = r["swings"][0]
+    assert s["peak_wrist_speed"] > 6.5
+    assert s["finish_above_shoulder_m"] > 0
+
+
+def test_backhand_classified():
+    w = _body(90)
+    _groundstroke(w, 45, start_x=-0.5, end_x=0.6)       # from the left side across to the right
+    assert [s["stroke"] for s in stroke_report(_track(w), "auto", "right")["swings"]] == ["backhand"]
+
+
+def test_serve_from_toss_arm():
+    w = _body(90)
+    w[20:45, LEFT_WRIST, 1] = -1.2                       # toss arm well above the head
+    _groundstroke(w, 45, start_x=0.6, end_x=-0.5)
+    r = stroke_report(_track(w), "auto", "right")
+    assert [s["stroke"] for s in r["swings"]] == ["serve"]
+    assert r["swings"][0]["toss_height_m"] > 0.3
+
+
+def test_drill_overrides_classification():
+    w = _body(90)
+    _groundstroke(w, 45, start_x=0.6, end_x=-0.5)
+    r = stroke_report(_track(w), "backhand", "right")
+    assert r["swings"][0]["stroke"] == "backhand" and "backhand" in r["summary"]
+
+
+def test_no_swings_when_still():
+    r = stroke_report(_track(_body(60)), "auto", "right")
+    assert r["swings"] == [] and "No swings" in r["tips"][0]
+
+
+def test_detect_hand():
+    w = _body(90)
+    w[30:40, LEFT_WRIST, 0] = np.linspace(-0.5, 0.6, 10)   # only the left arm moves fast
+    assert detect_hand(_track(w)) == "left"
+
+
+def test_bad_args():
+    with pytest.raises(ValueError):
+        stroke_report(_track(_body(10)), "volley")

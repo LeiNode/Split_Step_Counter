@@ -1,5 +1,5 @@
 """
-analyze.py — headless, offline split-step counting for one video file.
+analyze.py — headless, offline analysis of one video file.
 
 This is what the HTTP API (api/main.py) calls. Unlike the GUI workers it does
 no drawing and no playback pacing: frames are processed as fast as the CPU
@@ -7,13 +7,16 @@ allows, so the detectors are driven by the video's own timestamps instead of
 the wall clock. Otherwise cooldowns and the LSTM's velocity features would
 depend on how fast the server happens to be.
 
+One pass over the video records a PoseTrack; split-step counting runs live
+during the pass, and everything else (split-step quality, stroke training)
+is computed from the track afterwards.
+
 Usage
 -----
-    python -m split_step.analyze VIDEO [--model lstm|rules]
+    python -m split_step.analyze VIDEO [--model lstm|rules] [--drill auto|forehand|backhand|serve]
 
     from split_step.analyze import analyze_video
-    result = analyze_video("clip.mp4", model="rules")
-    result["count"]
+    result = analyze_video("clip.mp4", model="rules", drill="forehand")
 """
 
 import json
@@ -23,6 +26,7 @@ import cv2
 
 from .detector import download_model, make_pose_landmarker, detect_pose, SplitStepDetector
 from .pose_track import PoseTrackBuilder
+from .strokes import DRILLS, HANDS, stroke_report
 from .tennis_metrics import session_summary, split_step_quality
 
 MODELS = ("lstm", "rules")
@@ -41,31 +45,36 @@ def _make_detector(model: str, clock, require_full_pose: bool = True):
     raise ValueError(f"model must be one of {MODELS}, got {model!r}")
 
 
-def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool = True) -> dict:
-    """Count split steps in a video file.
+def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool = True,
+                  drill: str | None = None, hand: str = "auto",
+                  count_split_steps: bool = True, split_step_metrics: bool = True) -> dict:
+    """Analyse a video file.
 
-    model             — "lstm" (stateful LSTM, the GUI default) or "rules" (SplitStepDetector).
-    require_full_pose — skip the LSTM on frames where the hips/ankles/heels/toes
-                        aren't all visible (the rules detector always does this).
+    model              — split-step counter: "lstm" (GUI default) or "rules"
+    require_full_pose  — skip the LSTM on frames where the hips/ankles/heels/toes
+                         aren't all visible (the rules detector always does this)
+    drill              — None: no stroke analysis. "forehand" / "backhand" /
+                         "serve": every swing is that stroke. "auto": classify.
+    hand               — hitting hand for stroke analysis: "right", "left", "auto"
+    count_split_steps  — False skips split-step counting entirely
+    split_step_metrics — False skips per-split-step quality metrics + session summary
 
-    Returns a JSON-serialisable dict:
-        count            — number of split steps
-        model            — the model used
-        events           — one dict per counted split step: timestamp_ms plus
-                           quality metrics (hop_height, landing_knee_angle,
-                           landing_stance_ratio, landing_ms; see tennis_metrics)
-        session          — whole-video stats and coaching tips (session_summary)
-        frames           — frames decoded
-        frames_with_pose — frames where a person was detected
-        frames_tracked   — frames the counter actually used (full lower body visible,
-                           unless require_full_pose=False with the LSTM)
-        duration_ms      — timestamp of the last decoded frame
-        fps              — the file's reported frame rate (0 if unknown)
-        processing_s     — wall time spent
+    Returns a JSON-serialisable dict. Always present:
+        frames, frames_with_pose, duration_ms, fps, processing_s
+    With count_split_steps:
+        count, model, frames_tracked,
+        events  — one dict per split step: timestamp_ms (+ quality metrics)
+        session — whole-video stats and coaching tips (with split_step_metrics)
+    With a drill:
+        strokes — stroke_report(): swings, per-stroke summary, tips
     Raises VideoError if the file can't be opened or has no frames.
     """
     if model not in MODELS:
         raise ValueError(f"model must be one of {MODELS}, got {model!r}")
+    if drill is not None and drill not in DRILLS:
+        raise ValueError(f"drill must be one of {DRILLS}, got {drill!r}")
+    if hand not in HANDS:
+        raise ValueError(f"hand must be one of {HANDS}, got {hand!r}")
     download_model()
 
     cap = cv2.VideoCapture(video_path)
@@ -74,7 +83,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
 
     started  = time.perf_counter()
     video_ts = [0.0]  # seconds; the detectors read this as their clock
-    detector = _make_detector(model, clock=lambda: video_ts[0], require_full_pose=require_full_pose)
+    detector = (_make_detector(model, clock=lambda: video_ts[0], require_full_pose=require_full_pose)
+                if count_split_steps else None)
 
     track = PoseTrackBuilder(int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
                              int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
@@ -99,10 +109,11 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                 if world_lms is None:
                     continue
                 with_pose += 1
-                hop = detector.process(world_lms, img_lms)
-                tracked += detector.tracking
-                if hop:
-                    events.append({"timestamp_ms": round(ts_ms, 1)})
+                if detector is not None:
+                    hop = detector.process(world_lms, img_lms)
+                    tracked += detector.tracking
+                    if hop:
+                        events.append({"timestamp_ms": round(ts_ms, 1)})
         fps = cap.get(cv2.CAP_PROP_FPS)
     finally:
         cap.release()
@@ -111,31 +122,38 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
         raise VideoError("The video contains no decodable frames.")
 
     pose_track = track.build()
-    for e in events:
-        e.update(split_step_quality(pose_track, e["timestamp_ms"]))
+    result = {}
+    if detector is not None:
+        result.update({"count": detector.count, "model": model, "events": events})
+        if split_step_metrics:
+            for e in events:
+                e.update(split_step_quality(pose_track, e["timestamp_ms"]))
+            result["session"] = session_summary(pose_track, events)
+        result["frames_tracked"] = tracked
+    if drill is not None:
+        result["strokes"] = stroke_report(pose_track, drill, hand)
 
-    return {
-        "count":            detector.count,
-        "model":            model,
-        "events":           events,
-        "session":          session_summary(pose_track, events),
+    result.update({
         "frames":           frames,
         "frames_with_pose": with_pose,
-        "frames_tracked":   tracked,
         "duration_ms":      round(last_ts_ms, 1),
         "fps":              round(fps, 3) if fps and fps > 0 else 0,
         "processing_s":     round(time.perf_counter() - started, 3),
-    }
+    })
+    return result
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Count split steps in a video file.")
+    parser = argparse.ArgumentParser(description="Count split steps and analyse strokes in a video file.")
     parser.add_argument("video", help="Path to the video file")
     parser.add_argument("--model", choices=MODELS, default="lstm")
     parser.add_argument("--allow-partial-pose", action="store_true",
                         help="Run the LSTM even when the lower body isn't fully visible")
+    parser.add_argument("--drill", choices=DRILLS, help="Also analyse strokes (forehand/backhand/serve/auto)")
+    parser.add_argument("--hand", choices=HANDS, default="auto", help="Hitting hand for stroke analysis")
     args = parser.parse_args()
     print(json.dumps(analyze_video(args.video, args.model,
-                                   require_full_pose=not args.allow_partial_pose), indent=2))
+                                   require_full_pose=not args.allow_partial_pose,
+                                   drill=args.drill, hand=args.hand), indent=2))
