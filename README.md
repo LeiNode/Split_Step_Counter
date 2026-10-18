@@ -170,6 +170,10 @@ Status codes:
 Processing runs about 3× faster than real time on a laptop CPU, so a 15 s
 clip takes about 5 s.
 
+Videos above 30 fps (common on phones) are analysed at ~30 fps by skipping
+frames. That matches the training data and halves the cost. On a 60 fps
+match clip, analysing every frame added 5 swings, at least 3 of them false.
+
 You can analyse without the server too:
 `python -m split_step.analyze practice.mp4 --model rules --drill serve`.
 

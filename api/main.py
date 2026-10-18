@@ -153,6 +153,7 @@ class CountResult(BaseModel):
     footwork: dict | None = None
     coach: dict | None = None
     frames: int
+    frames_analysed: int | None = None
     frames_with_pose: int
     duration_ms: float
     fps: float

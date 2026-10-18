@@ -37,6 +37,10 @@ from .timing import link_split_steps
 
 MODELS = ("lstm", "rules")
 
+# Frames closer together than this fraction of 1/max_fps are skipped, so a
+# 60 fps phone video is analysed at ~30 fps (jittery timestamps still pass).
+_FRAME_SKIP_SLACK = 0.75
+
 
 class VideoError(ValueError):
     """The input can't be opened or decoded as a video."""
@@ -57,7 +61,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                   split_step_timing: bool = True, rally_stats: bool = True,
                   include_pose: bool = False, ready_position: bool = True,
                   camera_view_check: bool = True, footwork: bool = True,
-                  coach: bool = True) -> dict:
+                  coach: bool = True, max_fps: float | None = 30.0) -> dict:
     """Analyse a video file.
 
     model              — split-step counter: "lstm" (GUI default) or "rules"
@@ -76,9 +80,16 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     camera_view_check  — report the camera angle (camera_view.py)
     footwork           — count steps (footwork.py)
     coach              — prioritised summary of all tips (coach.py)
+    max_fps            — analyse at most this many frames per second (None = all).
+                         The LSTM was trained on ~30 fps footage and the rules
+                         detector's thresholds are per frame, so higher-fps video
+                         is thinned to match; it also halves the cost of 60 fps.
+                         On a 60 fps match clip, full-rate analysis found 5 extra
+                         "swings", 3 of them clearly false (running, ball bouncing).
 
     Returns a JSON-serialisable dict. Always present:
-        frames, frames_with_pose, duration_ms, fps, processing_s
+        frames, frames_with_pose, duration_ms, fps, processing_s,
+        frames_analysed (fewer than frames when max_fps thinned the video)
     With count_split_steps:
         count, model, frames_tracked,
         events  — one dict per split step: timestamp_ms (+ quality metrics)
@@ -124,6 +135,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     track = PoseTrackBuilder(int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
                              int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
     events, frames, with_pose, tracked, last_ts_ms = [], 0, 0, 0, 0.0
+    min_gap_ms = 1000.0 / max_fps * _FRAME_SKIP_SLACK if max_fps else 0.0
+    analysed, last_used_ms = 0, None
     try:
         with make_pose_landmarker() as landmarker:
             while True:
@@ -137,6 +150,10 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                     ts_ms = last_ts_ms + 1
                 frames    += 1
                 last_ts_ms = ts_ms
+                if last_used_ms is not None and ts_ms - last_used_ms < min_gap_ms:
+                    continue
+                last_used_ms = ts_ms
+                analysed += 1
                 video_ts[0] = ts_ms / 1000.0
 
                 world_lms, img_lms = detect_pose(landmarker, frame, ts_ms)
@@ -184,6 +201,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
 
     result.update({
         "frames":           frames,
+        "frames_analysed":  analysed,
         "frames_with_pose": with_pose,
         "duration_ms":      round(last_ts_ms, 1),
         "fps":              round(fps, 3) if fps and fps > 0 else 0,
@@ -202,7 +220,10 @@ if __name__ == "__main__":
                         help="Run the LSTM even when the lower body isn't fully visible")
     parser.add_argument("--drill", choices=DRILLS, help="Also analyse strokes (forehand/backhand/serve/auto)")
     parser.add_argument("--hand", choices=HANDS, default="auto", help="Hitting hand for stroke analysis")
+    parser.add_argument("--max-fps", type=float, default=30.0,
+                        help="Analyse at most this many frames per second; 0 = every frame (default 30)")
     args = parser.parse_args()
     print(json.dumps(analyze_video(args.video, args.model,
                                    require_full_pose=not args.allow_partial_pose,
-                                   drill=args.drill, hand=args.hand), indent=2))
+                                   drill=args.drill, hand=args.hand,
+                                   max_fps=args.max_fps or None), indent=2))
