@@ -33,7 +33,7 @@ async function load(flags, { uploadsConfigured = false } = {}) {
   return { dom, doc: dom.window.document, calls };
 }
 
-const ALL = { split_step_counting: true, split_step_metrics: true, stroke_training: true,
+const ALL = { session_history: true, split_step_timing: true, split_step_counting: true, split_step_metrics: true, stroke_training: true,
   forehand_training: true, backhand_training: true, serve_training: true, auto_stroke_detection: true,
   lstm_model: true, rules_model: true, direct_upload: true, browser_uploads: true, live_view: true };
 
@@ -74,9 +74,33 @@ function chooseFile(dom) {
         "clicking a timestamp seeks the video");
   check(doc.getElementById("status").textContent.startsWith("Done"), "status says done: " + doc.getElementById("status").textContent);
 
+  // Timeline: one marker per real split step + one per swing
+  const expected = analysis.events.filter((e) => !e.during_swing).length + analysis.strokes.swings.length;
+  const markers = doc.querySelectorAll("#timeline .mk");
+  check(!doc.getElementById("timeline-box").hidden && markers.length === expected,
+        `timeline has ${markers.length} markers (expected ${expected})`);
+  check(doc.querySelectorAll("#timeline .mk.k-backhand").length === analysis.strokes.swings.filter((s) => s.stroke === "backhand").length,
+        "markers coloured by stroke");
+  const last = markers[markers.length - 1];
+  last.click();
+  check(doc.getElementById("player").currentTime > 0, "clicking a marker seeks the video");
+
+  // History: saved after each analysis, clearable
+  const rows = () => doc.querySelectorAll("#history-table tr").length - 1;
+  check(!doc.getElementById("history").hidden && rows() === 1, "history has the session");
+  check(doc.getElementById("history-table").textContent.includes("Match play"), "history shows the mode");
+  doc.getElementById("go").click();
+  await tick(); await tick();
+  check(rows() === 2, "second analysis adds a row");
+  doc.getElementById("clear-history").click();
+  check(doc.getElementById("history").hidden, "clear history hides the section");
+
   // 2. Serve + auto off, rules model off
   ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
   check(modes().join() === "split,forehand,backhand", "disabled modes removed: " + modes());
+  ({ dom, doc } = await load({ ...ALL, session_history: false }));
+  check(!doc.getElementById("history"), "history section removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
   check([...doc.querySelectorAll("#model option")].map((o) => o.value).join() === "lstm", "disabled model removed");
 
   // 3. Stroke training off entirely

@@ -48,6 +48,13 @@
     .status { color: var(--dim); min-height: 1.5em; }
     .error { color: var(--warn); }
     .tag { font-size: .75rem; padding: .05rem .4rem; border-radius: 4px; border: 1px solid var(--line); color: var(--dim); }
+    .timeline { position: relative; height: 28px; margin-top: .5rem; border-radius: 6px; background: var(--line); }
+    .timeline .mk { position: absolute; top: 3px; width: 6px; height: 22px; margin-left: -3px; border-radius: 3px; border: 0; padding: 0; cursor: pointer; }
+    .legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .8rem; color: var(--dim); margin-top: .35rem; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: .3rem; vertical-align: -1px; }
+    .k-split { background: #2f9e5b; } .k-forehand { background: #2b6cb0; } .k-backhand { background: #8a4fbf; }
+    .k-serve { background: #d9822b; } .k-unknown { background: #8a948f; }
+    .linkish { background: none; color: var(--dim); border: 1px solid var(--line); padding: .3rem .7rem; font-weight: 400; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -86,6 +93,10 @@
     </div>
     <p class="status" id="status"></p>
     <video id="player" controls playsinline hidden></video>
+    <div id="timeline-box" hidden>
+      <div class="timeline" id="timeline" aria-label="Shot timeline"></div>
+      <div class="legend" id="legend"></div>
+    </div>
   </section>
 
   <section class="card" id="split-results" hidden>
@@ -93,6 +104,12 @@
     <div class="stats" id="split-stats"></div>
     <div class="table-wrap"><table id="split-table"></table></div>
     <ul class="tips" id="split-tips"></ul>
+  </section>
+
+  <section class="card" id="history" data-feature="session_history" hidden>
+    <h2>Your progress <span class="tag">saved in this browser</span></h2>
+    <div class="table-wrap"><table id="history-table"></table></div>
+    <p><button class="linkish" id="clear-history">Clear history</button></p>
   </section>
 
   <section class="card" id="stroke-results" hidden>
@@ -262,6 +279,87 @@
     fillTips($("stroke-tips"), [...st.tips, ...(t ? t.tips : [])]);
   }
 
+  // ── Timeline ─────────────────────────────────────────────────────────────
+  const KIND_LABEL = { split: "Split step", forehand: "Forehand", backhand: "Backhand", serve: "Serve", unknown: "Swing" };
+
+  function renderTimeline(res) {
+    const marks = [
+      ...(res.events || []).filter((e) => !e.during_swing).map((e) => ["split", e.timestamp_ms]),
+      ...(res.strokes ? res.strokes.swings.map((s) => [s.stroke, s.timestamp_ms]) : []),
+    ];
+    const box = $("timeline-box");
+    box.hidden = !marks.length || !res.duration_ms;
+    if (box.hidden) return;
+    $("timeline").replaceChildren(...marks.map(([kind, ms]) => {
+      const b = document.createElement("button");
+      b.className = "mk k-" + kind;
+      b.style.left = Math.min(100, (ms / res.duration_ms) * 100) + "%";
+      b.title = `${KIND_LABEL[kind] || kind} at ${sec(ms)}`;
+      b.setAttribute("aria-label", b.title);
+      b.onclick = () => seekLink(ms).onclick();
+      return b;
+    }));
+    const kinds = [...new Set(marks.map(([k]) => k))];
+    $("legend").replaceChildren(...kinds.map((k) => {
+      const span = document.createElement("span");
+      span.innerHTML = `<i class="k-${k}"></i>`;
+      span.append(KIND_LABEL[k] || k);
+      return span;
+    }));
+  }
+
+  // ── Session history (this browser only) ──────────────────────────────────
+  const HISTORY_KEY = "tennis-trainer-history-v1", HISTORY_MAX = 50;
+
+  function readHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; }
+  }
+  function writeHistory(list) {
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX))); } catch { /* storage off */ }
+  }
+
+  function summarise(res, fileName, modeName) {
+    const med = (o) => (o && o.median !== undefined ? o.median : null);
+    const sw = res.strokes ? res.strokes.summary : {};
+    const strokeMed = (key) => {
+      const vals = Object.values(sw).map((v) => med(v[key])).filter((v) => v !== null);
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    };
+    return {
+      date: new Date().toISOString(), file: fileName, mode: modeName,
+      split_steps: res.count ?? null,
+      knee: med(res.session && res.session.landing_knee_angle),
+      swings: res.strokes ? res.strokes.swings.length : null,
+      contact: strokeMed("contact_height"),
+      speed: strokeMed("peak_wrist_speed"),
+      with_split: res.timing && res.timing.shots ? res.timing.fraction_with_split_step : null,
+    };
+  }
+
+  function renderHistory() {
+    const box = $("history");
+    if (!box) return;  // feature switched off
+    const list = readHistory();
+    box.hidden = !list.length;
+    fillTable($("history-table"), [
+      ["Date", (h) => new Date(h.date).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })],
+      ["Mode", (h) => KIND_LABEL[h.mode] || (h.mode === "auto" ? "Match play" : h.mode)],
+      ["Clip", (h) => h.file],
+      ["Split steps", (h) => h.split_steps ?? "–"],
+      ["Landing knee", (h) => fmt(h.knee, 0, "°")],
+      ["Swings", (h) => h.swings ?? "–"],
+      ["Contact height", (h) => fmt(h.contact)],
+      ["Wrist speed", (h) => fmt(h.speed, 1, " m/s")],
+      ["Split step before shot", (h) => h.with_split == null ? "–" : Math.round(h.with_split * 100) + "%"],
+    ], list);
+  }
+
+  function saveToHistory(res, fileName, modeName) {
+    if (!$("history")) return;
+    writeHistory([summarise(res, fileName, modeName), ...readHistory()]);
+    renderHistory();
+  }
+
   // ── Wiring ───────────────────────────────────────────────────────────────
   $("video").addEventListener("change", () => {
     const f = $("video").files[0], p = $("player");
@@ -278,6 +376,8 @@
       status(`Done in ${res.processing_s}s · ${res.frames} frames`);
       renderSplit(res);
       renderStrokes(res);
+      renderTimeline(res);
+      saveToHistory(res, file.name, mode());
     } catch (e) {
       status("Error: " + e.message, true);
     } finally {
@@ -285,7 +385,8 @@
     }
   });
 
-  loadFeatures();
+  $("clear-history")?.addEventListener("click", () => { writeHistory([]); renderHistory(); });
+  loadFeatures().then(renderHistory);
 </script>
 </body>
 </html>

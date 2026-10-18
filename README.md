@@ -59,7 +59,7 @@ uvicorn api.main:app --reload --port 8000
 
 | URL | What it is |
 |---|---|
-| http://localhost:8000/app/ | **Tennis Trainer** web app: pick split steps, forehand, backhand, serve or match play (auto), upload a clip, then click any timestamp to jump the video there. |
+| http://localhost:8000/app/ | **Tennis Trainer** web app: pick split steps, forehand, backhand, serve or match play (auto) and upload a clip. Click any timestamp or timeline marker to jump the video there. Past sessions appear in a progress table. |
 | http://localhost:8000/docs | Interactive Swagger docs |
 
 ### Endpoints
@@ -172,6 +172,7 @@ everywhere:
 | `lstm_model`, `rules_model` | Each split-step model |
 | `direct_upload`, `browser_uploads` | API upload routes |
 | `live_view` | Webcam button in the desktop GUI |
+| `session_history` | Web app: progress table of past sessions, saved in the browser |
 
 Everything is on by default. You can override switches in two places, and
 the environment variable wins:
@@ -337,7 +338,6 @@ main.py                      GUI entry point
 - **Split-step timing inherits the counter's low recall.** "Only N of M
   shots had a split step" undercounts whenever the detector misses a split
   step.
-
 - **Recall is low.** The deployed LSTM catches about 29% of split-step frames
   on the held-out test set (see `refinement_log.md`), so counts run low.
   More diverse training data is the planned fix (`TODO.md`).
