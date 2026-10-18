@@ -19,6 +19,8 @@ analyses run on them:
     noise counts toward the spread.
 - **Recovery.** Measures how fast the player gets back to a ready stance
   (knees bent, racket in front with both hands, feet apart) after each shot.
+- **Footwork.** Counts steps: steps per minute, and small adjustment steps
+  between shots in a rally.
 - **Rallies.** Groups swings into rallies (shots per rally, longest rally).
 - **Split step → shot timing.** Shows which shots had a split step
   0.4–2.5 s before them. Hops that happen during a swing are flagged, not
@@ -182,6 +184,7 @@ everywhere:
 |---|---|
 | `split_step_counting` | Split-step counting (parent of `split_step_metrics`) |
 | `split_step_metrics` | Per-split-step quality metrics and session summary |
+| `footwork` | Step counting: steps per minute, adjustment steps between shots |
 | `camera_view_check` | Detect the camera angle; warn when it's one the model handles poorly |
 | `stroke_training` | All stroke training (parent of the four below) |
 | `forehand_training`, `backhand_training`, `serve_training` | Each drill |

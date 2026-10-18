@@ -105,6 +105,8 @@ function chooseFile(dom) {
   check(doc.getElementById("stroke-table").textContent.includes("Rally"), "rally column shown");
   check(doc.getElementById("stroke-table").textContent.includes("Back to ready"), "recovery column shown");
   check(doc.getElementById("stroke-stats").textContent.includes("Recovery"), "recovery stat shown");
+  check(doc.getElementById("stroke-table").textContent.includes("Steps before"), "adjustment-steps column shown");
+  check(doc.getElementById("split-stats").textContent.includes("Steps per minute"), "steps per minute shown");
 
   // Downloads: capture the generated CSV
   let saved = null;

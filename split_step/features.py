@@ -22,6 +22,7 @@ import os
 # name -> (default, description)
 DEFAULTS: dict[str, tuple[bool, str]] = {
     "split_step_counting": (True,  "Count split steps (the core feature)"),
+    "footwork":            (True,  "Step counting: steps per minute, adjustment steps between shots"),
     "camera_view_check":   (True,  "Detect the camera angle and warn when it's one the model handles poorly"),
     "split_step_metrics":  (True,  "Per-split-step hop height, knee bend, stance width + session summary"),
     "stroke_training":     (True,  "Swing detection and stroke feedback (master switch for the three below)"),

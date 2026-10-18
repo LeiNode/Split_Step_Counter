@@ -134,7 +134,8 @@ class AnalysisOptions:
                            split_step_timing=flags["split_step_timing"],
                            rally_stats=flags["rally_stats"], include_pose=include_pose,
                            ready_position=flags["ready_position"],
-                           camera_view_check=flags["camera_view_check"])
+                           camera_view_check=flags["camera_view_check"],
+                           footwork=flags["footwork"])
 
 
 class CountResult(BaseModel):
@@ -149,6 +150,7 @@ class CountResult(BaseModel):
     pose: dict | None = None
     recovery: dict | None = None
     camera: dict | None = None
+    footwork: dict | None = None
     frames: int
     frames_with_pose: int
     duration_ms: float

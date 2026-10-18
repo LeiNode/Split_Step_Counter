@@ -116,7 +116,8 @@
         "load_knee_angle": 115.6,
         "split_step_lead_ms": null,
         "rally": 1,
-        "recovery_ms": 800.0
+        "recovery_ms": 800.0,
+        "steps_before": null
       },
       {
         "timestamp_ms": 1700.0,
@@ -129,7 +130,8 @@
         "load_knee_angle": 139.6,
         "split_step_lead_ms": null,
         "rally": 1,
-        "recovery_ms": null
+        "recovery_ms": null,
+        "steps_before": 1
       },
       {
         "timestamp_ms": 3266.7,
@@ -142,7 +144,8 @@
         "load_knee_angle": 122.5,
         "split_step_lead_ms": null,
         "rally": 1,
-        "recovery_ms": 733.3
+        "recovery_ms": 733.3,
+        "steps_before": 4
       },
       {
         "timestamp_ms": 5766.7,
@@ -155,7 +158,8 @@
         "load_knee_angle": 117.3,
         "split_step_lead_ms": 1266.7,
         "rally": 1,
-        "recovery_ms": 533.3
+        "recovery_ms": 533.3,
+        "steps_before": 6
       },
       {
         "timestamp_ms": 8433.3,
@@ -168,7 +172,8 @@
         "load_knee_angle": 119.4,
         "split_step_lead_ms": null,
         "rally": 1,
-        "recovery_ms": 400.0
+        "recovery_ms": 400.0,
+        "steps_before": 6
       },
       {
         "timestamp_ms": 10833.3,
@@ -181,7 +186,8 @@
         "load_knee_angle": 121.4,
         "split_step_lead_ms": null,
         "rally": 1,
-        "recovery_ms": null
+        "recovery_ms": null,
+        "steps_before": 3
       },
       {
         "timestamp_ms": 13200.0,
@@ -194,7 +200,8 @@
         "load_knee_angle": 104.5,
         "split_step_lead_ms": null,
         "rally": 1,
-        "recovery_ms": null
+        "recovery_ms": null,
+        "steps_before": 6
       },
       {
         "timestamp_ms": 15500.0,
@@ -207,7 +214,8 @@
         "load_knee_angle": 98.4,
         "split_step_lead_ms": 1233.3,
         "rally": 1,
-        "recovery_ms": 566.7
+        "recovery_ms": 566.7,
+        "steps_before": 3
       }
     ],
     "summary": {
@@ -366,9 +374,15 @@
       "Most of this video shows the player from the side. The split-step model was trained mainly on footage filmed from behind the player, so split-step counts may be less reliable here. For best results, film from behind the baseline."
     ]
   },
+  "footwork": {
+    "steps": 50,
+    "steps_per_minute": 157.6,
+    "median_steps_between_shots": 4.0,
+    "tips": []
+  },
   "frames": 572,
   "frames_with_pose": 572,
   "duration_ms": 19033.3,
   "fps": 30.0,
-  "processing_s": 8.293
+  "processing_s": 8.385
 }

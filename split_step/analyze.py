@@ -29,6 +29,7 @@ from .pose_track import PoseTrackBuilder
 from .strokes import DRILLS, HANDS, stroke_report
 from .tennis_metrics import session_summary, split_step_quality
 from .camera_view import camera_report
+from .footwork import footwork_report
 from .rallies import find_rallies
 from .ready_position import recovery
 from .timing import link_split_steps
@@ -54,7 +55,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                   count_split_steps: bool = True, split_step_metrics: bool = True,
                   split_step_timing: bool = True, rally_stats: bool = True,
                   include_pose: bool = False, ready_position: bool = True,
-                  camera_view_check: bool = True) -> dict:
+                  camera_view_check: bool = True, footwork: bool = True) -> dict:
     """Analyse a video file.
 
     model              — split-step counter: "lstm" (GUI default) or "rules"
@@ -71,6 +72,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     include_pose       — also return the per-frame skeleton (PoseTrack.export_skeleton)
     ready_position     — with a drill: recovery to a ready stance after each shot
     camera_view_check  — report the camera angle (camera_view.py)
+    footwork           — count steps (footwork.py)
 
     Returns a JSON-serialisable dict. Always present:
         frames, frames_with_pose, duration_ms, fps, processing_s
@@ -88,6 +90,9 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     With a drill and ready_position:
         recovery — recovery(): share of shots recovered from + median time;
                    adds swings[].recovery_ms
+    With footwork:
+        footwork — steps, steps per minute; with a drill also adjustment steps
+                   between shots (adds swings[].steps_before)
     With camera_view_check:
         camera  — dominant view (back/front/side), per-view shares, warning tip
     With include_pose:
@@ -167,6 +172,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
         result["pose"] = pose_track.export_skeleton()
     if camera_view_check:
         result["camera"] = camera_report(pose_track)
+    if footwork:
+        result["footwork"] = footwork_report(pose_track, result["strokes"]["swings"] if drill else None)
 
     result.update({
         "frames":           frames,

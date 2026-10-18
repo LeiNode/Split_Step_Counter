@@ -294,6 +294,7 @@
       ...(s.split_steps_per_minute !== undefined ? [stat("Per minute", fmt(s.split_steps_per_minute, 1))] : []),
       ...(s.interval_s ? [stat("Typical gap", fmt(s.interval_s.median, 1, " s"))] : []),
       ...(s.landing_knee_angle ? [stat("Landing knee bend", fmt(s.landing_knee_angle.median, 0, "°"))] : []),
+      ...(res.footwork ? [stat("Steps per minute", fmt(res.footwork.steps_per_minute, 0))] : []),
     );
     const cols = [["Time", (e) => seekLink(e.timestamp_ms)]];
     if (res.timing) cols.push(["", (e) => e.during_swing ? "hop during a swing" : ""]);
@@ -322,6 +323,7 @@
       ...(res.recovery && res.recovery.median_recovery_ms != null ? [stat("Recovery", fmt(res.recovery.median_recovery_ms / 1000, 1, " s"))] : []));
     const cols = [["Time", (s) => seekLink(s.timestamp_ms)], ["Stroke", (s) => s.stroke]];
     if (res.rallies) cols.push(["Rally", (s) => s.rally]);
+    if (res.footwork) cols.push(["Steps before", (s) => s.steps_before ?? "–"]);
     if (res.recovery) cols.push(["Back to ready", (s) => s.recovery_ms == null ? "–" : fmt(s.recovery_ms / 1000, 1, " s")]);
     cols.push(["Wrist speed", (s) => fmt(s.peak_wrist_speed, 1, " m/s")]);
     if (serve) cols.push(["Reach", (s) => fmt(s.contact_reach_m, 2, " m")], ["Toss", (s) => fmt(s.toss_height_m, 2, " m")], ["Toss release (side)", (s) => fmt(s.toss_lateral_m, 2, " m")],
@@ -331,7 +333,8 @@
     if (t) cols.push(["Split step before", (s) => s.split_step_lead_ms == null ? "none" : fmt(s.split_step_lead_ms / 1000, 1, " s")]);
     fillTable($("stroke-table"), cols, st.swings);
     fillTips($("stroke-tips"), [...st.tips, ...(t ? t.tips : []), ...(res.rallies ? res.rallies.summary.tips : []),
-                                 ...(res.recovery ? res.recovery.tips : [])]);
+                                 ...(res.recovery ? res.recovery.tips : []),
+                                 ...(res.footwork ? res.footwork.tips : [])]);
   }
 
   // ── Timeline ─────────────────────────────────────────────────────────────
