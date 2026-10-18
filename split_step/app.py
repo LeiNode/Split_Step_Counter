@@ -59,6 +59,13 @@ class App:
         self._flags = features.all_features()
         # With only one model enabled, use it and hide the toggle
         self._use_lstm: tk.BooleanVar         = tk.BooleanVar(value=self._flags["lstm_model"])
+        # Live drill choices: label -> drill name (None = split steps only)
+        self._drills = {"Split steps only": None}
+        for d in ("forehand", "backhand", "serve"):
+            if self._flags[f"{d}_training"]:
+                self._drills[f"{d.capitalize()} drill"] = d
+        self._drill_var = tk.StringVar(value="Split steps only")
+        self._hand_var  = tk.StringVar(value="Right-handed")
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -97,6 +104,14 @@ class App:
                            activeforeground=self.FG,
                            font=("Helvetica", 9)).pack(anchor=tk.W, pady=(0, 4))
 
+        if len(self._drills) > 1:
+            row = tk.Frame(ctrl, bg=self.BG)
+            row.pack(fill=tk.X, pady=(6, 0))
+            ttk.Combobox(row, textvariable=self._drill_var, values=list(self._drills),
+                         state="readonly", width=15).pack(side=tk.LEFT)
+            ttk.Combobox(row, textvariable=self._hand_var, values=["Right-handed", "Left-handed"],
+                         state="readonly", width=11).pack(side=tk.RIGHT)
+
         ttk.Separator(ctrl, orient="horizontal").pack(fill=tk.X, pady=16)
 
         # Created even when switched off (other code toggles its state), just never shown
@@ -124,6 +139,15 @@ class App:
                                     font=("Helvetica", 11),
                                     bg=self.BG, fg=self.FG_DIM)
         self._status_lbl.pack(pady=(2, 0))
+
+        # Live drill swing counter (shown only while a drill runs)
+        self._swing_title = tk.StringVar(value="")
+        self._swing_var = tk.StringVar(value="")
+        self._swing_box = tk.Frame(ctrl, bg=self.BG)
+        tk.Label(self._swing_box, textvariable=self._swing_title, font=("Helvetica", 10),
+                 bg=self.BG, fg=self.FG_DIM).pack(pady=(14, 0))
+        tk.Label(self._swing_box, textvariable=self._swing_var, font=("Helvetica", 36, "bold"),
+                 bg=self.BG, fg=self.ORANGE).pack()
 
         self._canvas = tk.Canvas(self.root, width=CANVAS_W, height=CANVAS_H,
                                  bg="#0d0d1a", highlightthickness=0)
@@ -163,14 +187,19 @@ class App:
             self._file_label.config(text=os.path.basename(path), fg=self.FG)
             self._btn_process.config(state=tk.NORMAL)
 
+    def _drill_kwargs(self) -> dict:
+        drill = self._drills.get(self._drill_var.get())
+        hand = "left" if self._hand_var.get().startswith("Left") else "right"
+        return {"drill": drill, "hand": hand}
+
     def _start_video(self):
         if self._video_path:
             self._launch(VideoAnalysis(self._video_path, self._queue, self._stop,
-                                       use_lstm=self._use_lstm.get()))
+                                       use_lstm=self._use_lstm.get(), **self._drill_kwargs()))
 
     def _start_live(self):
         self._launch(LiveViewAnalysis(self._queue, self._stop,
-                                      use_lstm=self._use_lstm.get()))
+                                      use_lstm=self._use_lstm.get(), **self._drill_kwargs()))
 
     def _request_stop(self):
         self._stop.set()
@@ -189,6 +218,13 @@ class App:
                 break
 
         self._count_var.set("0")
+        drill = worker._drill
+        if drill:
+            self._swing_title.set(f"{drill.upper()}S")
+            self._swing_var.set("0")
+            self._swing_box.pack()
+        else:
+            self._swing_box.pack_forget()
         self._set_status("warming up…", self.FG_DIM)
         self._btn_process.config(state=tk.DISABLED)
         self._btn_live.config(state=tk.DISABLED)
@@ -206,12 +242,14 @@ class App:
                 kind = item[0]
 
                 if kind == "frame":
-                    _, rgb, count, state = item
+                    _, rgb, count, state, swings = item
                     img = Image.fromarray(rgb)
                     self._photo = ImageTk.PhotoImage(img)
                     self._canvas.delete("all")
                     self._canvas.create_image(0, 0, anchor=tk.NW, image=self._photo)
                     self._count_var.set(str(count))
+                    if swings is not None:
+                        self._swing_var.set(str(swings))
                     self._set_status(*self._STATUS.get(state, self._STATUS[GROUNDED]))
 
                 elif kind == "done":

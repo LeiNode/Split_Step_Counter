@@ -90,3 +90,21 @@ def test_detect_hand():
 def test_bad_args():
     with pytest.raises(ValueError):
         stroke_report(_track(_body(10)), "volley")
+
+
+def test_live_counter_matches_offline():
+    from types import SimpleNamespace as NS
+    from split_step.strokes import LiveSwingCounter, detect_swings
+    w = _body(150)
+    _groundstroke(w, 45, start_x=0.6, end_x=-0.5)
+    w[100:, RIGHT_WRIST, :3] = w[0, RIGHT_WRIST, :3]          # back to the start...
+    _groundstroke(w[60:], 60, start_x=0.6, end_x=-0.5)       # ...second swing at frame 120
+    t = _track(w)
+    now = [0.0]
+    c = LiveSwingCounter("right", clock=lambda: now[0])
+    for k in range(len(t)):
+        now[0] = t.ts_ms[k] / 1000
+        c.process([NS(x=a, y=b, z=z, visibility=v) for a, b, z, v in t.world[k]])
+    assert c.count == len(detect_swings(t, "right")) == 2
+    c.reset()
+    assert c.count == 0 and c.hand == "right"

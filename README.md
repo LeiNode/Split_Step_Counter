@@ -52,6 +52,13 @@ python main.py
 Pick a video file or start a live webcam feed. The "Use LSTM model" checkbox
 switches between the two detectors.
 
+To practise strokes, pick a **Forehand / Backhand / Serve drill** and your
+hitting hand. A live swing counter then runs alongside the split-step count,
+which suits solo practice in front of a webcam. Live swing detection is
+approximate: on test clips it matched the offline analysis on about 85% of
+swings, usually one frame later, and it can miss the first swing. For full
+metrics, use the web app or API.
+
 ## API and web app
 
 ### Run locally

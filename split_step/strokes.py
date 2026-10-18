@@ -325,3 +325,65 @@ def stroke_report(track: PoseTrack, drill: str = "auto", hand: str = "auto") -> 
     if not swings:
         tips.append("No swings detected. Make sure the hitting arm stays in frame.")
     return {"drill": drill, "hand": hand, "swings": swings, "summary": summary, "tips": tips}
+
+
+class LiveSwingCounter:
+    """
+    Online swing counter for live drills (desktop GUI / webcam).
+
+    Same detection rule as detect_swings(), but streaming: a speed peak is
+    confirmed once LOOKAHEAD later frames show it was the local maximum, so
+    a swing registers ~100 ms after it happens. Every swing counts as the
+    drill's stroke (no classification live).
+
+    clock() -> seconds, as for the split-step counters.
+    """
+
+    LOOKAHEAD = 3
+
+    def __init__(self, hand: str = "right", clock=None):
+        import time
+        self._clock = clock or time.time
+        self.hand = hand
+        self._shoulder, self._elbow, self._wrist, _ = _arm(hand)
+        self.count = 0
+        self._prev = None          # (t, wrist xyz) of the previous visible frame
+        self._raw: list[float] = []
+        self._speeds: list[tuple[float, float, bool]] = []   # (t, filtered speed, arm visible)
+        self._last_swing_t = -1e9
+
+    def process(self, world_landmarks) -> bool:
+        """Feed one frame (pose_world_landmarks). True when a swing was just confirmed."""
+        t = self._clock()
+        sh, el, wr = (world_landmarks[j] for j in (self._shoulder, self._elbow, self._wrist))
+        arm_visible = sh.visibility >= 0.5 and el.visibility >= 0.5
+        speed = np.nan
+        if wr.visibility >= 0.5:
+            p = np.array([wr.x, wr.y, wr.z])
+            if self._prev is not None and t > self._prev[0]:
+                speed = float(np.linalg.norm(p - self._prev[1]) / (t - self._prev[0]))
+            self._prev = (t, p)
+        else:
+            self._prev = None
+        self._raw = (self._raw + [speed])[-3:]
+        finite = [v for v in self._raw if np.isfinite(v)]
+        filtered = float(np.median(finite)) if len(finite) >= 2 else np.nan
+        self._speeds = (self._speeds + [(t, filtered, arm_visible)])[-(2 * self.LOOKAHEAD + 1 + 15):]
+
+        # Candidate = the frame LOOKAHEAD back; compare with its neighbours on both sides
+        if len(self._speeds) < 2 * self.LOOKAHEAD + 1:
+            return False
+        ct, cv, _ = self._speeds[-1 - self.LOOKAHEAD]
+        around = [v for _, v, _ in self._speeds[-(2 * self.LOOKAHEAD + 1):]]
+        if not (np.isfinite(cv) and SWING_MIN_SPEED <= cv <= SWING_MAX_SPEED
+                and cv >= np.nanmax(around) and (ct - self._last_swing_t) * 1000 >= SWING_MIN_GAP_MS):
+            return False
+        vis = np.mean([v for _, _, v in self._speeds])
+        if vis < SWING_MIN_VISIBLE:
+            return False
+        self._last_swing_t = ct
+        self.count += 1
+        return True
+
+    def reset(self):
+        self.__init__(self.hand, self._clock)

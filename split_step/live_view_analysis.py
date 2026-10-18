@@ -15,8 +15,8 @@ from .detector import _AnalysisWorker
 
 class LiveViewAnalysis(_AnalysisWorker):
     def __init__(self, frame_queue: queue.Queue, stop_event: threading.Event,
-                 camera_index: int = 0, use_lstm: bool = False):
-        super().__init__(frame_queue, stop_event, use_lstm)
+                 camera_index: int = 0, use_lstm: bool = False, **drill):
+        super().__init__(frame_queue, stop_event, use_lstm, **drill)
         self._camera_index  = camera_index
         self._session_start = 0.0
 
