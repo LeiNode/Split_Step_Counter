@@ -89,6 +89,8 @@ function chooseFile(dom) {
   // Rallies
   check(doc.getElementById("stroke-stats").textContent.includes("Longest rally"), "rally stats shown");
   check(doc.getElementById("stroke-table").textContent.includes("Rally"), "rally column shown");
+  check(doc.getElementById("stroke-table").textContent.includes("Back to ready"), "recovery column shown");
+  check(doc.getElementById("stroke-stats").textContent.includes("Recovery"), "recovery stat shown");
 
   // Downloads: capture the generated CSV
   let saved = null;

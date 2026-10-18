@@ -29,6 +29,7 @@ from .pose_track import PoseTrackBuilder
 from .strokes import DRILLS, HANDS, stroke_report
 from .tennis_metrics import session_summary, split_step_quality
 from .rallies import find_rallies
+from .ready_position import recovery
 from .timing import link_split_steps
 
 MODELS = ("lstm", "rules")
@@ -51,7 +52,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                   drill: str | None = None, hand: str = "auto",
                   count_split_steps: bool = True, split_step_metrics: bool = True,
                   split_step_timing: bool = True, rally_stats: bool = True,
-                  include_pose: bool = False) -> dict:
+                  include_pose: bool = False, ready_position: bool = True) -> dict:
     """Analyse a video file.
 
     model              — split-step counter: "lstm" (GUI default) or "rules"
@@ -66,6 +67,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                          that follow (see timing.py)
     rally_stats        — with a drill: group swings into rallies (see rallies.py)
     include_pose       — also return the per-frame skeleton (PoseTrack.export_skeleton)
+    ready_position     — with a drill: recovery to a ready stance after each shot
 
     Returns a JSON-serialisable dict. Always present:
         frames, frames_with_pose, duration_ms, fps, processing_s
@@ -80,6 +82,9 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                   also adds events[].during_swing and swings[].split_step_lead_ms
     With a drill and rally_stats:
         rallies — find_rallies(): rallies list + summary; adds swings[].rally
+    With a drill and ready_position:
+        recovery — recovery(): share of shots recovered from + median time;
+                   adds swings[].recovery_ms
     With include_pose:
         pose    — per-frame image-space skeleton for drawing overlays
     Raises VideoError if the file can't be opened or has no frames.
@@ -151,6 +156,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
             result["timing"] = link_split_steps(events, result["strokes"]["swings"])
         if rally_stats:
             result["rallies"] = find_rallies(result["strokes"]["swings"])
+        if ready_position:
+            result["recovery"] = recovery(pose_track, result["strokes"]["swings"])
     if include_pose:
         result["pose"] = pose_track.export_skeleton()
 

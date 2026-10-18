@@ -281,9 +281,11 @@
     $("stroke-stats").replaceChildren(stat("Swings", st.swings.length), stat("Hand", st.hand), ...counts,
       ...(t && t.shots ? [stat("Split step before shot", `${t.shots_with_split_step} of ${t.shots}`)] : []),
       ...(res.rallies && res.rallies.summary.rallies ? [stat("Rallies", res.rallies.summary.rallies),
-                                                         stat("Longest rally", res.rallies.summary.longest + " shots")] : []));
+                                                         stat("Longest rally", res.rallies.summary.longest + " shots")] : []),
+      ...(res.recovery && res.recovery.median_recovery_ms != null ? [stat("Recovery", fmt(res.recovery.median_recovery_ms / 1000, 1, " s"))] : []));
     const cols = [["Time", (s) => seekLink(s.timestamp_ms)], ["Stroke", (s) => s.stroke]];
     if (res.rallies) cols.push(["Rally", (s) => s.rally]);
+    if (res.recovery) cols.push(["Back to ready", (s) => s.recovery_ms == null ? "–" : fmt(s.recovery_ms / 1000, 1, " s")]);
     cols.push(["Wrist speed", (s) => fmt(s.peak_wrist_speed, 1, " m/s")]);
     if (serve) cols.push(["Reach", (s) => fmt(s.contact_reach_m, 2, " m")], ["Toss", (s) => fmt(s.toss_height_m, 2, " m")],
                          ["Elbow", (s) => fmt(s.elbow_extension, 0, "°")], ["Trophy knee", (s) => fmt(s.trophy_knee_angle, 0, "°")]);
@@ -291,7 +293,8 @@
                    ["Finish", (s) => fmt(s.finish_above_shoulder_m, 2, " m")], ["Knee load", (s) => fmt(s.load_knee_angle, 0, "°")]);
     if (t) cols.push(["Split step before", (s) => s.split_step_lead_ms == null ? "none" : fmt(s.split_step_lead_ms / 1000, 1, " s")]);
     fillTable($("stroke-table"), cols, st.swings);
-    fillTips($("stroke-tips"), [...st.tips, ...(t ? t.tips : []), ...(res.rallies ? res.rallies.summary.tips : [])]);
+    fillTips($("stroke-tips"), [...st.tips, ...(t ? t.tips : []), ...(res.rallies ? res.rallies.summary.tips : []),
+                                 ...(res.recovery ? res.recovery.tips : [])]);
   }
 
   // ── Timeline ─────────────────────────────────────────────────────────────

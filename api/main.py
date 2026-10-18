@@ -132,7 +132,8 @@ class AnalysisOptions:
         self.kwargs = dict(model=model, require_full_pose=require_full_pose, drill=drill, hand=hand,
                            count_split_steps=counting, split_step_metrics=flags["split_step_metrics"],
                            split_step_timing=flags["split_step_timing"],
-                           rally_stats=flags["rally_stats"], include_pose=include_pose)
+                           rally_stats=flags["rally_stats"], include_pose=include_pose,
+                           ready_position=flags["ready_position"])
 
 
 class CountResult(BaseModel):
@@ -145,6 +146,7 @@ class CountResult(BaseModel):
     timing: dict | None = None
     rallies: dict | None = None
     pose: dict | None = None
+    recovery: dict | None = None
     frames: int
     frames_with_pose: int
     duration_ms: float

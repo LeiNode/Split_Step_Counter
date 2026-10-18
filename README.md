@@ -14,6 +14,8 @@ analyses run on them:
 - **Stroke training.** Detects swings and gives feedback per stroke:
   - forehand / backhand: contact height, shoulder turn, follow-through, knee load
   - serve: reach, toss height, elbow extension, trophy-position knee bend
+- **Recovery.** Measures how fast the player gets back to a ready stance
+  (knees bent, racket in front with both hands, feet apart) after each shot.
 - **Rallies.** Groups swings into rallies (shots per rally, longest rally).
 - **Split step → shot timing.** Shows which shots had a split step
   0.4–2.5 s before them. Hops that happen during a swing are flagged, not
@@ -176,6 +178,7 @@ everywhere:
 | `live_view` | Webcam button in the desktop GUI |
 | `session_history` | Web app: progress table of past sessions, saved in the browser |
 | `rally_stats` | Group swings into rallies: shots per rally, longest rally |
+| `ready_position` | Recovery to a ready stance after each shot |
 | `report_download` | Web app: download results as JSON or CSV |
 | `pose_overlay` | Web app: skeleton drawn over the video (API: `include_pose`) |
 
