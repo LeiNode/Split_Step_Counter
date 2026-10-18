@@ -82,3 +82,24 @@ def test_session_summary_and_tips():
 def test_no_events_tip():
     t = _standing_track()
     assert "No split steps" in session_summary(t, [])["tips"][0]
+
+
+def test_export_skeleton():
+    from split_step.pose_track import SKELETON_EDGES, SKELETON_LANDMARKS
+    t = _standing_track(n=5)
+    t.world[2] = np.nan                       # frame without a pose
+    t.image[3, LEFT_ANKLE, 2] = 0.1           # invisible landmark
+    sk = t.export_skeleton()
+    assert len(sk["xy"]) == len(sk["ts_ms"]) == 5
+    assert sk["xy"][2] is None
+    assert len(sk["xy"][0]) == 2 * len(SKELETON_LANDMARKS)
+    j = SKELETON_LANDMARKS.index(LEFT_ANKLE)
+    assert sk["xy"][3][2 * j:2 * j + 2] == [-1, -1]
+    assert all(max(e) < len(SKELETON_LANDMARKS) for e in SKELETON_EDGES)
+
+
+def test_export_skeleton_is_capped():
+    t = _standing_track(n=100)
+    sk = t.export_skeleton(max_frames=30)
+    assert len(sk["xy"]) == len(sk["ts_ms"]) <= 30
+    assert sk["ts_ms"] == sorted(sk["ts_ms"])

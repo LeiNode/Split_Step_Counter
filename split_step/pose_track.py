@@ -47,6 +47,38 @@ class PoseTrack:
         xy[..., 0] *= self.aspect
         return xy
 
+    def export_skeleton(self, max_frames: int = 4000) -> dict:
+        """Compact per-frame image-space skeleton for drawing over the video.
+
+        {"landmarks": [ids], "edges": [[a, b], ...] (positions in that list),
+         "ts_ms": [...], "xy": [[x0, y0, x1, y1, ...] | null, ...]}
+        Coordinates are 0-1 fractions of the frame, 3 decimals; a landmark
+        that isn't visible is written as -1, -1. Long videos keep every
+        n-th frame so the payload stays under ~1 MB (Lambda responses are
+        capped at 6 MB); viewers draw the nearest exported frame.
+        """
+        frames = range(0, len(self), max(1, -(-len(self) // max_frames)))  # ceil division
+        xy = []
+        for k in frames:
+            if not self.present[k]:
+                xy.append(None)
+                continue
+            pts = self.image[k, SKELETON_LANDMARKS]
+            row = []
+            for x, y, v in pts:
+                row += [round(float(x), 3), round(float(y), 3)] if v >= 0.5 else [-1, -1]
+            xy.append(row)
+        return {"landmarks": SKELETON_LANDMARKS, "edges": SKELETON_EDGES,
+                "ts_ms": [round(float(self.ts_ms[k]), 1) for k in frames], "xy": xy}
+
+
+# Body (no face/hands) skeleton for overlays: nose, shoulders, elbows, wrists,
+# hips, knees, ankles, heels, toes — and edges as positions in that list.
+SKELETON_LANDMARKS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+SKELETON_EDGES = [[1, 2], [1, 3], [3, 5], [2, 4], [4, 6], [1, 7], [2, 8], [7, 8],
+                  [7, 9], [9, 11], [8, 10], [10, 12], [11, 13], [12, 14], [13, 15], [14, 16],
+                  [11, 15], [12, 16]]
+
 
 class PoseTrackBuilder:
     """Accumulates per-frame landmarks; call build() once at the end."""

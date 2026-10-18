@@ -34,7 +34,9 @@
     button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: .6rem 1.2rem; font-weight: 600; cursor: pointer; }
     button:disabled { opacity: .5; cursor: default; }
     select, input[type=file] { font: inherit; color: inherit; }
-    video { width: 100%; max-height: 24rem; background: #000; border-radius: 8px; margin-top: .75rem; }
+    .stage { position: relative; margin-top: .75rem; }
+    video { display: block; width: 100%; max-height: 24rem; background: #000; border-radius: 8px; }
+    #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
     .big { font-size: 2.6rem; font-weight: 700; line-height: 1; }
     .stats { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-bottom: .75rem; }
     .stats div span { display: block; color: var(--dim); font-size: .8rem; }
@@ -96,7 +98,11 @@
       <button class="linkish" id="dl-json">Download report (JSON)</button>
       <button class="linkish" id="dl-csv">Download shots (CSV)</button>
     </p>
-    <video id="player" controls playsinline hidden></video>
+    <div class="stage" id="stage" hidden>
+      <video id="player" controls playsinline></video>
+      <canvas id="overlay" data-feature="pose_overlay"></canvas>
+    </div>
+    <label data-feature="pose_overlay"><input type="checkbox" id="show-skeleton" checked> Show skeleton</label>
     <div id="timeline-box" hidden>
       <div class="timeline" id="timeline" aria-label="Shot timeline"></div>
       <div class="legend" id="legend"></div>
@@ -174,6 +180,7 @@
     if ($("model")) q.set("model", $("model").value);
     if (m !== "split") q.set("drill", m);
     if ($("hand") && m !== "split") q.set("hand", $("hand").value);
+    if ($("overlay")) q.set("include_pose", "true");
     return q.toString();
   }
 
@@ -288,6 +295,54 @@
   }
 
   // ── Timeline ─────────────────────────────────────────────────────────────
+  // ── Skeleton overlay ─────────────────────────────────────────────────────
+  let POSE = null;  // res.pose: {landmarks, edges, ts_ms, xy}
+
+  function poseAt(ms) {
+    const ts = POSE.ts_ms;
+    let lo = 0, hi = ts.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; ts[mid] < ms ? (lo = mid + 1) : (hi = mid); }
+    if (lo > 0 && Math.abs(ts[lo - 1] - ms) < Math.abs(ts[lo] - ms)) lo--;
+    return Math.abs(ts[lo] - ms) <= 100 ? POSE.xy[lo] : null;  // nothing if no frame within 100 ms
+  }
+
+  function drawOverlay() {
+    const c = $("overlay"), v = $("player");
+    if (!c) return;
+    const ctx = c.getContext && c.getContext("2d");
+    if (!ctx) return;
+    const w = c.clientWidth, h = c.clientHeight;
+    c.width = w; c.height = h;
+    ctx.clearRect(0, 0, w, h);
+    if (!POSE || !$("show-skeleton").checked || !v.videoWidth) return;
+    const pts = poseAt(v.currentTime * 1000);
+    if (!pts) return;
+    // The video is letterboxed inside the element (object-fit: contain)
+    const scale = Math.min(w / v.videoWidth, h / v.videoHeight);
+    const dw = v.videoWidth * scale, dh = v.videoHeight * scale, ox = (w - dw) / 2, oy = (h - dh) / 2;
+    const at = (i) => pts[2 * i] < 0 ? null : [ox + pts[2 * i] * dw, oy + pts[2 * i + 1] * dh];
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(92, 196, 136, .9)"; ctx.fillStyle = "#fff";
+    for (const [a, b] of POSE.edges) {
+      const p1 = at(a), p2 = at(b);
+      if (p1 && p2) { ctx.beginPath(); ctx.moveTo(...p1); ctx.lineTo(...p2); ctx.stroke(); }
+    }
+    for (let i = 0; i < POSE.landmarks.length; i++) {
+      const q = at(i);
+      if (q) { ctx.beginPath(); ctx.arc(q[0], q[1], 3, 0, 2 * Math.PI); ctx.fill(); }
+    }
+  }
+
+  function overlayLoop() {
+    drawOverlay();
+    const v = $("player");
+    if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(overlayLoop);
+    else if (!v.paused) requestAnimationFrame(overlayLoop);
+  }
+  $("player").addEventListener("play", overlayLoop);
+  ["seeked", "pause", "loadedmetadata"].forEach((ev) => $("player").addEventListener(ev, drawOverlay));
+  window.addEventListener("resize", drawOverlay);
+  $("show-skeleton")?.addEventListener("change", drawOverlay);
+
   const KIND_LABEL = { split: "Split step", forehand: "Forehand", backhand: "Backhand", serve: "Serve", unknown: "Swing" };
 
   function renderTimeline(res) {
@@ -396,7 +451,8 @@
   // ── Wiring ───────────────────────────────────────────────────────────────
   $("video").addEventListener("change", () => {
     const f = $("video").files[0], p = $("player");
-    if (f) { p.src = URL.createObjectURL(f); p.hidden = false; }
+    if (f) { p.src = URL.createObjectURL(f); $("stage").hidden = false; }
+    POSE = null; drawOverlay();
     updateControls();
   });
 
@@ -410,6 +466,7 @@
       renderSplit(res);
       renderStrokes(res);
       renderTimeline(res);
+      POSE = res.pose || null; drawOverlay();
       saveToHistory(res, file.name, mode());
       LAST = { res, file: file.name };
       if ($("downloads")) $("downloads").hidden = false;

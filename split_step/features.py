@@ -35,6 +35,7 @@ DEFAULTS: dict[str, tuple[bool, str]] = {
     "direct_upload":       (True,  "API: POST /v1/count with the video in the request"),
     "browser_uploads":     (True,  "API: presigned S3 uploads (/v1/upload-url, /v1/count/s3)"),
     "live_view":           (True,  "Desktop GUI: webcam live view"),
+    "pose_overlay":        (True,  "Web app: draw the detected skeleton over the video (API: include_pose)"),
     "report_download":     (True,  "Web app: download results as JSON / CSV"),
     "session_history":     (True,  "Web app: keep past results in the browser and show progress"),
 }

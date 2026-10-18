@@ -86,3 +86,9 @@ def test_enabled_drill_passes_flag_check(monkeypatch):
     # Flags allow it, so the request gets as far as video decoding (422 for junk bytes).
     r = client.post("/v1/count?drill=serve", files={"file": ("a.mp4", b"x", "video/mp4")})
     assert r.status_code == 422
+
+
+def test_pose_overlay_switch(monkeypatch):
+    monkeypatch.setenv("SPLIT_STEP_FEATURES", "pose_overlay=off")
+    r = client.post("/v1/count?include_pose=true", files={"file": ("a.mp4", b"x", "video/mp4")})
+    assert r.status_code == 404

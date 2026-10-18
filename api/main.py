@@ -115,6 +115,8 @@ class AnalysisOptions:
         drill: DrillName | None = Query(None, description="Stroke training: analyse swings as this "
                                                           "stroke ('auto' classifies each swing)"),
         hand: HandName = Query("auto", description="Hitting hand for stroke training"),
+        include_pose: bool = Query(False, description="Also return the per-frame skeleton "
+                                                      "(for drawing overlays; ~7 KB per second, max ~1 MB)"),
     ):
         flags = features.all_features()
         counting = flags["split_step_counting"]
@@ -123,12 +125,14 @@ class AnalysisOptions:
         if drill is not None and not flags[features.drill_feature(drill)]:
             raise HTTPException(status_code=404,
                                 detail=f"Feature '{features.drill_feature(drill)}' is disabled.")
+        if include_pose and not flags["pose_overlay"]:
+            raise HTTPException(status_code=404, detail="Feature 'pose_overlay' is disabled.")
         if not counting and drill is None:
             raise HTTPException(status_code=400, detail="Split-step counting is disabled; choose a drill.")
         self.kwargs = dict(model=model, require_full_pose=require_full_pose, drill=drill, hand=hand,
                            count_split_steps=counting, split_step_metrics=flags["split_step_metrics"],
                            split_step_timing=flags["split_step_timing"],
-                           rally_stats=flags["rally_stats"])
+                           rally_stats=flags["rally_stats"], include_pose=include_pose)
 
 
 class CountResult(BaseModel):
@@ -140,6 +144,7 @@ class CountResult(BaseModel):
     strokes: dict | None = None
     timing: dict | None = None
     rallies: dict | None = None
+    pose: dict | None = None
     frames: int
     frames_with_pose: int
     duration_ms: float

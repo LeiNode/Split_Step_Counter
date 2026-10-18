@@ -33,7 +33,7 @@ async function load(flags, { uploadsConfigured = false } = {}) {
   return { dom, doc: dom.window.document, calls };
 }
 
-const ALL = { report_download: true, rally_stats: true, session_history: true, split_step_timing: true, split_step_counting: true, split_step_metrics: true, stroke_training: true,
+const ALL = { pose_overlay: true, report_download: true, rally_stats: true, session_history: true, split_step_timing: true, split_step_counting: true, split_step_metrics: true, stroke_training: true,
   forehand_training: true, backhand_training: true, serve_training: true, auto_stroke_detection: true,
   lstm_model: true, rules_model: true, direct_upload: true, browser_uploads: true, live_view: true };
 
@@ -57,6 +57,7 @@ function chooseFile(dom) {
   doc.getElementById("go").click();
   await tick(); await tick();
   const countCall = calls.find((u) => u.includes("/v1/count?"));
+  check(countCall.includes("include_pose=true"), "asks for the skeleton when the overlay is on");
   check(countCall && countCall.includes("drill=auto") && countCall.includes("model=rules") && countCall.includes("hand=auto"),
         "falls back to direct upload with drill/model/hand: " + countCall);
   check(!doc.getElementById("split-results").hidden, "split-step results shown");
@@ -116,8 +117,11 @@ function chooseFile(dom) {
   // 2. Serve + auto off, rules model off
   ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
   check(modes().join() === "split,forehand,backhand", "disabled modes removed: " + modes());
-  ({ dom, doc } = await load({ ...ALL, session_history: false, report_download: false }));
+  ({ dom, doc, calls } = await load({ ...ALL, session_history: false, report_download: false, pose_overlay: false }));
   check(!doc.getElementById("history"), "history section removed when switched off");
+  check(!doc.getElementById("overlay") && !doc.getElementById("show-skeleton"), "overlay removed when switched off");
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  check(!calls.some((u) => u.includes("include_pose")), "no skeleton requested when overlay is off");
   check(!doc.getElementById("downloads"), "download buttons removed when switched off");
   ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
   check([...doc.querySelectorAll("#model option")].map((o) => o.value).join() === "lstm", "disabled model removed");

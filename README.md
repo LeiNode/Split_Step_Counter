@@ -81,6 +81,7 @@ Both analysis endpoints take these query parameters:
 | `require_full_pose` | `true` (default), `false` | Skip the LSTM on frames where the hips, ankles, heels or toes aren't visible. The LSTM was only trained on fully visible frames. |
 | `drill` | omit, `forehand`, `backhand`, `serve`, `auto` | Stroke training. In a drill, every swing is scored as that stroke. `auto` classifies each swing; serve detection is reliable, but forehand vs backhand is experimental. |
 | `hand` | `auto` (default), `right`, `left` | Hitting hand for stroke training |
+| `include_pose` | `false` (default), `true` | Also return the per-frame skeleton for drawing overlays: ~7 KB per second, capped at ~1 MB |
 
 Example:
 
@@ -176,6 +177,7 @@ everywhere:
 | `session_history` | Web app: progress table of past sessions, saved in the browser |
 | `rally_stats` | Group swings into rallies: shots per rally, longest rally |
 | `report_download` | Web app: download results as JSON or CSV |
+| `pose_overlay` | Web app: skeleton drawn over the video (API: `include_pose`) |
 
 Everything is on by default. You can override switches in two places, and
 the environment variable wins:

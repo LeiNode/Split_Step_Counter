@@ -50,7 +50,8 @@ def _make_detector(model: str, clock, require_full_pose: bool = True):
 def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool = True,
                   drill: str | None = None, hand: str = "auto",
                   count_split_steps: bool = True, split_step_metrics: bool = True,
-                  split_step_timing: bool = True, rally_stats: bool = True) -> dict:
+                  split_step_timing: bool = True, rally_stats: bool = True,
+                  include_pose: bool = False) -> dict:
     """Analyse a video file.
 
     model              — split-step counter: "lstm" (GUI default) or "rules"
@@ -64,6 +65,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     split_step_timing  — with counting and a drill: link split steps to the shots
                          that follow (see timing.py)
     rally_stats        — with a drill: group swings into rallies (see rallies.py)
+    include_pose       — also return the per-frame skeleton (PoseTrack.export_skeleton)
 
     Returns a JSON-serialisable dict. Always present:
         frames, frames_with_pose, duration_ms, fps, processing_s
@@ -78,6 +80,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                   also adds events[].during_swing and swings[].split_step_lead_ms
     With a drill and rally_stats:
         rallies — find_rallies(): rallies list + summary; adds swings[].rally
+    With include_pose:
+        pose    — per-frame image-space skeleton for drawing overlays
     Raises VideoError if the file can't be opened or has no frames.
     """
     if model not in MODELS:
@@ -147,6 +151,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
             result["timing"] = link_split_steps(events, result["strokes"]["swings"])
         if rally_stats:
             result["rallies"] = find_rallies(result["strokes"]["swings"])
+    if include_pose:
+        result["pose"] = pose_track.export_skeleton()
 
     result.update({
         "frames":           frames,
