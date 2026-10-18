@@ -116,8 +116,21 @@ function chooseFile(dom) {
   doc.getElementById("go").click();
   await tick(); await tick();
   check(rows() === 2, "second analysis adds a row");
+  // Progress chart: appears from the second session, one marker per session
+  check(!doc.getElementById("chart-wrap").hidden, "progress chart shown with two sessions");
+  const metricOpts = [...doc.querySelectorAll("#chart-metric option")].map((o) => o.value);
+  check(metricOpts.includes("per_min") && metricOpts.includes("consistency"), "chart metrics offered: " + metricOpts);
+  check(doc.querySelectorAll("#chart circle.pt").length === 2 && doc.querySelector("#chart polyline"), "line with a marker per session");
+  doc.querySelector("#chart circle.pt").dispatchEvent(new dom.window.FocusEvent("focus"));
+  check(!doc.getElementById("chart-tip").hidden && doc.getElementById("chart-tip").textContent.includes("clip.mp4"),
+        "focusing a point shows its tooltip");
+  const sel = doc.getElementById("chart-metric");
+  sel.value = "knee"; sel.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  check(doc.getElementById("chart").getAttribute("aria-label").startsWith("Landing knee"), "switching metric redraws");
+  const svgOut = doc.getElementById("chart").outerHTML;
   doc.getElementById("clear-history").click();
   check(doc.getElementById("history").hidden, "clear history hides the section");
+  if (process.env.CHART_SVG_OUT) require("fs").writeFileSync(process.env.CHART_SVG_OUT, svgOut);
 
   // 2. Serve + auto off, rules model off
   ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));

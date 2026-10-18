@@ -58,6 +58,17 @@
     .k-serve { background: #d9822b; } .k-unknown { background: #8a948f; }
     .linkish { background: none; color: var(--dim); border: 1px solid var(--line); padding: .3rem .7rem; font-weight: 400; }
     .notice { border-color: var(--warn); color: var(--warn); }
+    .chart-wrap { position: relative; margin: .5rem 0 1rem; }
+    .chart-wrap svg { display: block; width: 100%; height: auto; aspect-ratio: 600 / 220; overflow: visible; }
+    .chart-wrap .grid { stroke: var(--line); stroke-width: 1; }
+    .chart-wrap .axis-label { fill: var(--dim); font-size: 11px; }
+    .chart-wrap .series { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+    .chart-wrap .pt { fill: var(--accent); stroke: var(--card); stroke-width: 2; }
+    .chart-wrap .pt:focus { outline: none; stroke: var(--ink); }
+    .chart-wrap .crosshair { stroke: var(--dim); stroke-width: 1; }
+    .chart-tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line);
+                 border-radius: 6px; padding: .3rem .5rem; font-size: .8rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+    .chart-tip b { display: block; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -121,6 +132,12 @@
 
   <section class="card" id="history" data-feature="session_history" hidden>
     <h2>Your progress <span class="tag">saved in this browser</span></h2>
+    <label>Chart <select id="chart-metric"></select></label>
+    <div class="chart-wrap" id="chart-wrap">
+      <svg id="chart" role="img" aria-label="Progress chart"></svg>
+      <div class="chart-tip" id="chart-tip" hidden></div>
+    </div>
+    <p class="status" id="chart-empty" hidden></p>
     <div class="table-wrap"><table id="history-table"></table></div>
     <p><button class="linkish" id="clear-history">Clear history</button></p>
   </section>
@@ -418,7 +435,8 @@
     const med = (o) => (o && o.median !== undefined ? o.median : null);
     const sw = res.strokes ? res.strokes.summary : {};
     const strokeMed = (key) => {
-      const vals = Object.values(sw).map((v) => med(v[key])).filter((v) => v !== null);
+      const vals = Object.values(sw).map((v) => typeof v[key] === "number" ? v[key] : med(v[key]))
+        .filter((v) => v !== null && v !== undefined);
       return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
     };
     return {
@@ -429,6 +447,8 @@
       contact: strokeMed("contact_height"),
       speed: strokeMed("peak_wrist_speed"),
       with_split: res.timing && res.timing.shots ? res.timing.fraction_with_split_step : null,
+      per_min: res.session ? res.session.split_steps_per_minute : null,
+      consistency: strokeMed("consistency"),
     };
   }
 
@@ -448,6 +468,102 @@
       ["Wrist speed", (h) => fmt(h.speed, 1, " m/s")],
       ["Split step before shot", (h) => h.with_split == null ? "–" : Math.round(h.with_split * 100) + "%"],
     ], list);
+    renderChart();
+  }
+
+  // ── Progress chart (single series: the picked metric over sessions) ──────
+  const CHART_METRICS = [
+    ["per_min", "Split steps per minute", (v) => v.toFixed(1)],
+    ["knee", "Landing knee bend (°, lower = deeper)", (v) => v.toFixed(0) + "°"],
+    ["with_split", "Shots with a split step before them", (v) => Math.round(v * 100) + "%"],
+    ["consistency", "Stroke consistency (0-100)", (v) => v.toFixed(0)],
+    ["contact", "Contact height (0 = hips, 1 = shoulders)", (v) => v.toFixed(2)],
+    ["speed", "Wrist speed (m/s)", (v) => v.toFixed(1)],
+  ];
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const svgEl = (tag, attrs) => {
+    const el = document.createElementNS(SVG_NS, tag);
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    return el;
+  };
+  const shortDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+  function renderChart() {
+    const sel = $("chart-metric");
+    if (!sel) return;
+    const list = readHistory();
+    // Offer only metrics that at least one session has
+    const available = CHART_METRICS.filter(([key]) => list.some((h) => h[key] != null));
+    const keep = sel.value;
+    sel.replaceChildren(...available.map(([key, label]) => new Option(label, key)));
+    if (available.some(([key]) => key === keep)) sel.value = keep;
+    const metric = CHART_METRICS.find(([key]) => key === sel.value);
+    const pts = metric ? list.filter((h) => h[metric[0]] != null).slice().reverse() : [];  // oldest first
+    const svg = $("chart");
+    svg.replaceChildren();
+    $("chart-tip").hidden = true;
+    const enough = pts.length >= 2;
+    $("chart-wrap").hidden = !enough;
+    $("chart-empty").hidden = enough;
+    $("chart-empty").textContent = "Analyse at least two clips to see a progress chart.";
+    if (!enough) return;
+
+    const [key, label, fmtV] = metric;
+    svg.setAttribute("aria-label", `${label} over ${pts.length} sessions`);
+    const W = 600, H = 220, L = 44, R = 12, T = 12, B = 26;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    const vals = pts.map((h) => h[key]);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.1; lo -= pad; hi += pad;
+    const x = (i) => L + (i / (pts.length - 1)) * (W - L - R);
+    const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+
+    for (let g = 0; g <= 3; g++) {                          // recessive hairline grid + y labels
+      const v = lo + (g / 3) * (hi - lo), yy = y(v);
+      svg.append(svgEl("line", { class: "grid", x1: L, x2: W - R, y1: yy, y2: yy }));
+      const t = svgEl("text", { class: "axis-label", x: L - 6, y: yy + 4, "text-anchor": "end" });
+      t.textContent = fmtV(v);
+      svg.append(t);
+    }
+    [0, pts.length - 1].forEach((i) => {                    // first/last date only, to avoid collisions
+      const t = svgEl("text", { class: "axis-label", x: x(i), y: H - 6, "text-anchor": i ? "end" : "start" });
+      t.textContent = shortDate(pts[i].date);
+      svg.append(t);
+    });
+    svg.append(svgEl("polyline", { class: "series",
+      points: pts.map((h, i) => `${x(i)},${y(h[key])}`).join(" ") }));
+    const cross = svgEl("line", { class: "crosshair", y1: T, y2: H - B, visibility: "hidden" });
+    svg.append(cross);
+
+    const tip = $("chart-tip");
+    const show = (i) => {
+      const h = pts[i];
+      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+      tip.innerHTML = "<b></b><span></span>";
+      tip.querySelector("b").textContent = fmtV(h[key]);
+      tip.querySelector("span").textContent = `${shortDate(h.date)} · ${h.file}`;
+      tip.hidden = false;
+      const box = svg.getBoundingClientRect();
+      tip.style.left = Math.min(Math.max(0, (x(i) / W) * box.width - 60), Math.max(0, box.width - 160)) + "px";
+      tip.style.top = Math.max(0, (y(h[key]) / H) * box.height - 52) + "px";
+    };
+    const hide = () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; };
+    pts.forEach((h, i) => {                                 // markers: 8px, ringed, keyboard-focusable
+      const c = svgEl("circle", { class: "pt", cx: x(i), cy: y(h[key]), r: 4, tabindex: 0,
+                                  "aria-label": `${shortDate(h.date)}: ${fmtV(h[key])}` });
+      c.addEventListener("focus", () => show(i));
+      c.addEventListener("blur", hide);
+      svg.append(c);
+    });
+    // Crosshair snaps to the nearest session along X; the whole plot is the hit area
+    svg.onpointermove = (e) => {
+      const box = svg.getBoundingClientRect();
+      if (!box.width) return;
+      const fx = ((e.clientX - box.left) / box.width) * W;
+      show(Math.max(0, Math.min(pts.length - 1, Math.round(((fx - L) / (W - L - R)) * (pts.length - 1)))));
+    };
+    svg.onpointerleave = hide;
   }
 
   function saveToHistory(res, fileName, modeName) {
@@ -489,6 +605,7 @@
   });
 
   $("clear-history")?.addEventListener("click", () => { writeHistory([]); renderHistory(); });
+  $("chart-metric")?.addEventListener("change", renderChart);
   $("dl-json")?.addEventListener("click", () => download(reportName("json"), "application/json", JSON.stringify(LAST.res, null, 2)));
   $("dl-csv")?.addEventListener("click", () => download(reportName("csv"), "text/csv", toCsv(LAST.res)));
   loadFeatures().then(renderHistory);
