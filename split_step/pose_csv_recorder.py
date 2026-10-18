@@ -1,15 +1,18 @@
 """
-PoseCSVRecorder — writes one row per frame to assets/pose.csv.
+PoseCSVRecorder — streams one CSV row per frame of pose landmarks.
 
 Each row contains:
-  - frame index and timestamp
-  - split-step count
+  - timestamp_ms and split-step count
   - world landmark coordinates (x, y, z metres, hip-relative) + visibility
   - image landmark coordinates (x, y normalised 0-1) for all 33 MediaPipe landmarks
+  - any extra_columns passed to the constructor (e.g. label, source_video)
+Missing landmarks are written as empty cells.
 
 Usage
 -----
-    recorder = PoseCSVRecorder()
+    python -m split_step.pose_csv_recorder VIDEO [--out DIR]   # -> DIR/sideview1.csv
+
+    recorder = PoseCSVRecorder("assets/csv_files", "pose1.csv")
     recorder.record(world_lms, img_lms, detector.count, ts_ms)
     recorder.close()                      # or use as a context manager
 """
@@ -52,7 +55,7 @@ def _build_header() -> list:
 
 
 class PoseCSVRecorder:
-    """Streams pose landmark data to assets/pose.csv, overwriting on each run."""
+    """Streams pose landmark data to output_dir/output_name, overwriting any existing file."""
 
     def __init__(self, output_dir: str = ASSETS_DIR, output_name: str = "sideview1.csv",
                  extra_columns: list | None = None):
@@ -131,10 +134,7 @@ class PoseCSVRecorder:
 if __name__ == "__main__":
     import argparse
     import cv2
-    import mediapipe as mp
-    from mediapipe.tasks import python as mp_tasks
-    from mediapipe.tasks.python import vision as mp_vision
-    from .detector import download_model, MODEL_PATH, SplitStepDetector
+    from .detector import download_model, make_pose_landmarker, detect_pose, SplitStepDetector
 
     parser = argparse.ArgumentParser(description="Record pose landmarks from a video to CSV.")
     parser.add_argument("video", help="Path to the input video file")
@@ -142,14 +142,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     download_model()
-
-    options = mp_vision.PoseLandmarkerOptions(
-        base_options=mp_tasks.BaseOptions(model_asset_path=MODEL_PATH),
-        running_mode=mp_vision.RunningMode.VIDEO,
-        num_poses=1,
-        min_pose_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    )
 
     cap = cv2.VideoCapture(args.video)
     if not cap.isOpened():
@@ -165,7 +157,7 @@ if __name__ == "__main__":
     next_target   = 0.0                     # next timestamp we want to record
 
     with PoseCSVRecorder(args.out) as recorder:
-        with mp_vision.PoseLandmarker.create_from_options(options) as landmarker:
+        with make_pose_landmarker() as landmarker:
             while True:
                 ret, frame = cap.read()
                 if not ret:
@@ -178,12 +170,7 @@ if __name__ == "__main__":
 
                 next_target += SAMPLE_INTERVAL_MS
 
-                rgb    = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-                result = landmarker.detect_for_video(mp_img, int(ts_ms))
-
-                world_lms = result.pose_world_landmarks[0] if result.pose_world_landmarks else None
-                img_lms   = result.pose_landmarks[0]       if result.pose_landmarks       else None
+                world_lms, img_lms = detect_pose(landmarker, frame, ts_ms)
 
                 if world_lms:
                     detector.process(world_lms, img_lms)

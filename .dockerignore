@@ -1,0 +1,11 @@
+# Keep the build context small: the images only need split_step/, api/, models/
+.git
+.venv
+ml_env
+.claude
+**/__pycache__
+assets
+cut_previews
+data_windowing
+model_experimentation
+tests

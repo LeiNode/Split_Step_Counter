@@ -16,16 +16,9 @@ from .detector import _AnalysisWorker
 class LiveViewAnalysis(_AnalysisWorker):
     def __init__(self, frame_queue: queue.Queue, stop_event: threading.Event,
                  camera_index: int = 0, use_lstm: bool = False):
-        super().__init__(frame_queue, stop_event)
+        super().__init__(frame_queue, stop_event, use_lstm)
         self._camera_index  = camera_index
         self._session_start = 0.0
-        self._use_lstm      = use_lstm
-
-    def _make_detector(self):
-        if self._use_lstm:
-            from .lstm_counter import LSTMCounter
-            return LSTMCounter()
-        return super()._make_detector()
 
     def _source(self):
         return self._camera_index

@@ -6,36 +6,29 @@ pose detection on the ORIGINAL full-length videos (not the cut clips, which
 may be corrupted by short-segment export failures) and writes one combined
 labeled CSV.
 
+Each output row gets `label` (1 inside a "(splitstep)" clip's range) and
+`source_video` ("<video_prefix>#<sub_clip>", where sub_clip increments at each
+detected scene cut so training never treats a hard edit as continuous motion).
+Frames whose hips/ankles/feet aren't visible are skipped.
+
 Usage
 -----
     python -m split_step.build_labeled_dataset \\
         "assets/split_step_videos/Labeled Training Set 1" \\
         "assets/split_step_videos/Training Set 1" \\
-        assets/csv_files/labeled_training_set_1.csv
+        assets/csv_files/labeled_training_set_1.csv \\
+        [--exclude "assets/split_step_videos/Test_Set"]
 """
 
 import argparse
-import math
 import os
 import re
 
 import cv2
-import mediapipe as mp
-from mediapipe.tasks import python as mp_tasks
-from mediapipe.tasks.python import vision as mp_vision
 
-from .detector import download_model, MODEL_PATH, KEY_LANDMARKS, MIN_VISIBILITY
+from .csv_labeler import in_any_range as _in_any_range
+from .detector import download_model, make_pose_landmarker, detect_pose, key_landmarks_visible
 from .pose_csv_recorder import PoseCSVRecorder
-
-
-def _key_landmarks_visible(world_lms) -> bool:
-    """True when every KEY_LANDMARKS point (hips, ankles, heels, foot-index) is
-    visible enough to trust — mirrors SplitStepDetector's own gate, so a frame
-    where the ankles are cropped out of the shot doesn't feed noisy leg
-    coordinates into training."""
-    if world_lms is None:
-        return False
-    return all(world_lms[i].visibility >= MIN_VISIBILITY for i in KEY_LANDMARKS)
 
 
 # Scene-cut (hard edit) detection for compilation-style source videos.
@@ -63,7 +56,8 @@ def _frame_histogram(frame_bgr):
 
 
 class _CutDetector:
-    """Tracks whether consecutive frames belong to the same continuous shot."""
+    """Tracks whether consecutive frames belong to the same continuous shot.
+    Call update() on every decoded frame; sub_idx is the current shot number."""
 
     def __init__(self):
         self._prev_hist = None
@@ -81,6 +75,7 @@ class _CutDetector:
                 self.cuts += 1
                 self._frames_since_cut = 0
         self._prev_hist = hist
+
 
 _VIDEO_EXTS = (".mp4", ".webm")
 
@@ -100,9 +95,10 @@ def _parse_timestamp(ts: str) -> float:
     return (((hh * 60) + mm) * 60 + ss) * 1000 + mmm
 
 
-def _parse_ranges(clips_dir: str) -> dict:
-    """Return {video_prefix: [(start_ms, end_ms), ...]} for every clip in a folder,
-    regardless of any label tag in the filename."""
+def _parse_ranges(clips_dir: str, positive_only: bool = False) -> dict:
+    """Return {video_prefix: [(start_ms, end_ms), ...]} for the clips in a folder.
+    positive_only keeps just the clips tagged "(splitstep)"; otherwise every
+    clip counts regardless of its tag."""
     ranges_by_video: dict = {}
     for fname in os.listdir(clips_dir):
         if not fname.lower().endswith(_VIDEO_EXTS):
@@ -110,35 +106,15 @@ def _parse_ranges(clips_dir: str) -> dict:
         m = _RANGE_PATTERN.match(fname)
         if not m:
             continue
+        if positive_only:
+            tag_m = _LABEL_TAG_PATTERN.search(fname)
+            if not tag_m or "not" in tag_m.group(0).lower():
+                continue
         video, start_s, end_s = m.groups()
         ranges_by_video.setdefault(video, []).append(
             (_parse_timestamp(start_s), _parse_timestamp(end_s))
         )
     return ranges_by_video
-
-
-def _parse_segments(clips_dir: str) -> dict:
-    """Return {video_prefix: [(start_ms, end_ms), ...]} of split-step ranges only."""
-    ranges_by_video: dict = {}
-    for fname in os.listdir(clips_dir):
-        if not fname.lower().endswith(_VIDEO_EXTS):
-            continue
-        m = _RANGE_PATTERN.match(fname)
-        tag_m = _LABEL_TAG_PATTERN.search(fname)
-        if not m or not tag_m or "not" in tag_m.group(0).lower():
-            continue
-        video, start_s, end_s = m.groups()
-        ranges_by_video.setdefault(video, []).append(
-            (_parse_timestamp(start_s), _parse_timestamp(end_s))
-        )
-    return ranges_by_video
-
-
-def _in_any_range(timestamp_ms: float, ranges: list) -> int:
-    for start, end in ranges:
-        if math.floor(start) <= timestamp_ms <= math.floor(end):
-            return 1
-    return 0
 
 
 def _load_video_mapping(clips_dir: str) -> dict:
@@ -180,26 +156,20 @@ def _find_source_video(source_dir: str, video_prefix: str, mapping: dict) -> str
 
 def build_dataset(clips_dir: str, source_dir: str, out_path: str,
                    exclude_dir: str | None = None) -> None:
+    """Write one labeled CSV covering every source video referenced in clips_dir.
+    Timestamps inside exclude_dir's clip ranges (the held-out test set) are skipped."""
     download_model()
 
     all_by_video = _parse_ranges(clips_dir)
     if not all_by_video:
         raise ValueError(f"No clips parsed from filenames in {clips_dir}")
-    ranges_by_video = _parse_segments(clips_dir)  # positive (splitstep) ranges only
+    ranges_by_video = _parse_ranges(clips_dir, positive_only=True)
 
     video_mapping = _load_video_mapping(clips_dir)
     exclude_by_video = _parse_ranges(exclude_dir) if exclude_dir else {}
 
     out_dir, out_name = os.path.split(out_path)
     recorder = PoseCSVRecorder(out_dir or ".", out_name, extra_columns=["label", "source_video"])
-
-    options = mp_vision.PoseLandmarkerOptions(
-        base_options=mp_tasks.BaseOptions(model_asset_path=MODEL_PATH),
-        running_mode=mp_vision.RunningMode.VIDEO,
-        num_poses=1,
-        min_pose_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    )
 
     total = 0
     try:
@@ -223,7 +193,7 @@ def build_dataset(clips_dir: str, source_dir: str, out_path: str,
             excluded = 0
             low_vis = 0
             cutter = _CutDetector()
-            with mp_vision.PoseLandmarker.create_from_options(options) as landmarker:
+            with make_pose_landmarker() as landmarker:
                 while True:
                     ret, frame = cap.read()
                     if not ret:
@@ -235,14 +205,8 @@ def build_dataset(clips_dir: str, source_dir: str, out_path: str,
                         excluded += 1
                         continue
 
-                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-                    result = landmarker.detect_for_video(mp_img, int(ts_ms))
-
-                    world_lms = result.pose_world_landmarks[0] if result.pose_world_landmarks else None
-                    img_lms   = result.pose_landmarks[0]       if result.pose_landmarks       else None
-
-                    if not _key_landmarks_visible(world_lms):
+                    world_lms, img_lms = detect_pose(landmarker, frame, ts_ms)
+                    if not key_landmarks_visible(world_lms):
                         low_vis += 1
                         continue
 
@@ -272,14 +236,6 @@ def build_unlabeled_range(source_video: str, start_ms: float, end_ms: float,
     out_dir, out_name = os.path.split(out_path)
     recorder = PoseCSVRecorder(out_dir or ".", out_name, extra_columns=["source_video"])
 
-    options = mp_vision.PoseLandmarkerOptions(
-        base_options=mp_tasks.BaseOptions(model_asset_path=MODEL_PATH),
-        running_mode=mp_vision.RunningMode.VIDEO,
-        num_poses=1,
-        min_pose_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    )
-
     cap = cv2.VideoCapture(source_video)
     if not cap.isOpened():
         raise FileNotFoundError(f"Could not open {source_video}")
@@ -288,7 +244,7 @@ def build_unlabeled_range(source_video: str, start_ms: float, end_ms: float,
     low_vis = 0
     cutter = _CutDetector()
     try:
-        with mp_vision.PoseLandmarker.create_from_options(options) as landmarker:
+        with make_pose_landmarker() as landmarker:
             while True:
                 ret, frame = cap.read()
                 if not ret:
@@ -301,14 +257,8 @@ def build_unlabeled_range(source_video: str, start_ms: float, end_ms: float,
 
                 cutter.update(frame)  # runs on every decoded frame, independent of pose
 
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-                result = landmarker.detect_for_video(mp_img, int(ts_ms))
-
-                world_lms = result.pose_world_landmarks[0] if result.pose_world_landmarks else None
-                img_lms   = result.pose_landmarks[0]       if result.pose_landmarks       else None
-
-                if not _key_landmarks_visible(world_lms):
+                world_lms, img_lms = detect_pose(landmarker, frame, ts_ms)
+                if not key_landmarks_visible(world_lms):
                     low_vis += 1
                     continue
 

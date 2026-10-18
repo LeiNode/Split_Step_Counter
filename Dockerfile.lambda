@@ -1,0 +1,24 @@
+# Split Step Counter API — AWS Lambda container image.
+#
+#   docker build -f Dockerfile.lambda -t split-step-lambda .
+#
+# Lambda's filesystem is read-only except /tmp, so the pose model must be baked
+# in (it is: models/ is copied below) rather than downloaded on first run.
+
+FROM public.ecr.aws/lambda/python:3.12
+
+# OpenCV (pulled in by mediapipe) needs libGL at import time
+RUN dnf install -y mesa-libGL glib2 && dnf clean all
+
+COPY api/requirements.txt ${LAMBDA_TASK_ROOT}/api/requirements.txt
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+ && pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/api/requirements.txt
+
+COPY split_step ${LAMBDA_TASK_ROOT}/split_step
+COPY api        ${LAMBDA_TASK_ROOT}/api
+COPY models     ${LAMBDA_TASK_ROOT}/models
+
+ENV SPLIT_STEP_MODELS_DIR=${LAMBDA_TASK_ROOT}/models \
+    MPLCONFIGDIR=/tmp/matplotlib
+
+CMD ["api.lambda_handler.handler"]

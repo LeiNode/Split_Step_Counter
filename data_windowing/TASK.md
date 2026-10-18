@@ -31,7 +31,7 @@ The CSV must have:
 - optionally `source_video`. Without it, the whole file is treated as one video.
 
 The landmark order is fixed. It must match `FEATURE_LANDMARK_NAMES` in
-`model_experimentation/lstm_model.ipynb` and `_LANDMARK_INDICES` in
+`model_experimentation/lstm_model.ipynb` and `LANDMARK_INDICES` in
 `split_step/lstm_counter.py`.
 
 ## Output (`window_dataset.py --out X.npz`)
@@ -67,13 +67,13 @@ python data_windowing/window_dataset.py assets/csv_files/test_set_labeled.csv \
 - Checks passed: padded frames are exactly 0 and there are no NaNs.
 
 ## Open items for the next agent
-- **Wire the output into training.** The notebook still uses `SEQ_LEN = 20`
-  with its own `build_windows`, while `split_step/lstm_counter.py` uses
-  `_SEQ_LEN = 10`. Switching to 9-frame windows means changing both, retraining
-  and regenerating `models/feat_mean.npy` and `models/feat_std.npy`.
-- **Handle padding at inference.** The live counter waits for a full buffer.
-  Either keep training with `min_frames = seq_len` (no padding), or make
-  `LSTMCounter` zero-pad the same way.
+- **Not currently wired into training.** Since 2026-10-01 the deployed model
+  is a *stateful* per-frame LSTM (`split_step/lstm_counter.py`): the notebook
+  trains it on continuous sequences, and inference carries hidden state frame
+  to frame, with no fixed window. These ~300 ms windows only apply if a
+  windowed classifier is revisited. In that case, also make `LSTMCounter`
+  zero-pad short windows the same way, and regenerate `models/feat_mean.npy`
+  and `models/feat_std.npy`.
 - **Consider a grouped validation split.** Splitting by `video` or `segment`
   instead of a random shuffle would avoid near-duplicate overlapping windows
   leaking into validation.

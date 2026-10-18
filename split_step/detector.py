@@ -1,6 +1,18 @@
 """
-Core detection logic: constants, utilities, SplitStepDetector, and the
-_AnalysisWorker base class that LiveViewAnalysis and VideoAnalysis extend.
+Core detection logic shared by the GUI and the data-pipeline scripts.
+
+Contents, top to bottom:
+  - MediaPipe model location + landmark index constants
+  - Tuning constants for the rule-based detector
+  - Pose helpers: make_pose_landmarker(), detect_pose(), key_landmarks_visible()
+  - Drawing helpers: draw_landmarks(), fit_frame(), annotate_frame()
+  - FootStateTracker   — per-foot EMA velocity tracking (rising / grounded)
+  - SplitStepDetector  — rule-based state machine that counts split steps
+  - _AnalysisWorker    — base class for VideoAnalysis / LiveViewAnalysis
+
+Coordinate conventions: "world" landmarks are metres relative to the hip
+centre (MediaPipe pose_world_landmarks); "image" landmarks are normalised 0-1
+frame coordinates (pose_landmarks). In both, y increases downward.
 """
 
 import os
@@ -21,7 +33,7 @@ from .paths import POSE_LANDMARKER_PATH
 MODEL_URL  = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
 MODEL_PATH = POSE_LANDMARKER_PATH
 
-# ── Landmark indices ───────────────────────────────────────────────────────────
+# ── Landmark indices (MediaPipe BlazePose) ─────────────────────────────────────
 LEFT_SHOULDER    = 11
 RIGHT_SHOULDER   = 12
 LEFT_ELBOW       = 13
@@ -30,6 +42,8 @@ LEFT_WRIST       = 15
 RIGHT_WRIST      = 16
 LEFT_HIP         = 23
 RIGHT_HIP        = 24
+LEFT_KNEE        = 25
+RIGHT_KNEE       = 26
 LEFT_ANKLE       = 27
 RIGHT_ANKLE      = 28
 LEFT_HEEL        = 29
@@ -37,6 +51,7 @@ RIGHT_HEEL       = 30
 LEFT_FOOT_INDEX  = 31
 RIGHT_FOOT_INDEX = 32
 
+# Skeleton edges drawn on the preview (pairs of landmark indices)
 POSE_CONNECTIONS = [
     (0,1),(1,2),(2,3),(3,7),(0,4),(4,5),(5,6),(6,8),
     (9,10),(11,12),(11,13),(13,15),(15,17),(15,19),(15,21),(17,19),
@@ -60,21 +75,25 @@ MAX_FOOT_HEIGHT_DIFF = 0.20 # max y-gap (metres) between ankles at takeoff; runn
 HOP_COOLDOWN        = 0.8  # seconds after a counted hop during which no new hop can be counted
 HIP_DESCEND_MAX     = 0.005 # max downward hip velocity (normalised image y / frame) before a hop is blocked
 
+# Landmarks that must all be visible before a frame is trusted at all
 KEY_LANDMARKS = [LEFT_HIP, RIGHT_HIP, LEFT_ANKLE, RIGHT_ANKLE,
                  LEFT_HEEL, RIGHT_HEEL, LEFT_FOOT_INDEX, RIGHT_FOOT_INDEX]
 
+# Detector states (also shown in the GUI status line)
 GROUNDED      = "grounded"
 AIRBORNE      = "airborne"
 LEFT_LEG_UP   = "left_leg_up"
 RIGHT_LEG_UP  = "right_leg_up"
 
+# GUI preview size; frames are letterboxed to fit
 CANVAS_W = 854
 CANVAS_H = 480
 
 
-# ── Utilities ──────────────────────────────────────────────────────────────────
+# ── Pose helpers ───────────────────────────────────────────────────────────────
 
 def download_model() -> None:
+    """Fetch the MediaPipe pose model into models/ if it isn't there yet."""
     if not os.path.exists(MODEL_PATH):
         os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
         print(f"Downloading pose model to {MODEL_PATH} …")
@@ -82,7 +101,44 @@ def download_model() -> None:
         print("Download complete.")
 
 
+def make_pose_landmarker() -> mp_vision.PoseLandmarker:
+    """Create a single-person, VIDEO-mode PoseLandmarker. Use it as a context
+    manager and feed it frames in increasing-timestamp order via detect_pose()."""
+    options = mp_vision.PoseLandmarkerOptions(
+        base_options=mp_tasks.BaseOptions(model_asset_path=MODEL_PATH),
+        running_mode=mp_vision.RunningMode.VIDEO,
+        num_poses=1,
+        min_pose_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+    )
+    return mp_vision.PoseLandmarker.create_from_options(options)
+
+
+def detect_pose(landmarker: mp_vision.PoseLandmarker, frame_bgr: np.ndarray, ts_ms: float):
+    """Run pose detection on one BGR frame.
+    Returns (world_landmarks, image_landmarks); each is None when no pose is found."""
+    rgb    = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+    mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+    result = landmarker.detect_for_video(mp_img, int(ts_ms))
+    world_lms = result.pose_world_landmarks[0] if result.pose_world_landmarks else None
+    img_lms   = result.pose_landmarks[0]       if result.pose_landmarks       else None
+    return world_lms, img_lms
+
+
+def key_landmarks_visible(world_lms) -> bool:
+    """True when every KEY_LANDMARKS point (hips, ankles, heels, foot-index) is
+    visible enough to trust. Used as the detector's per-frame gate and by the
+    dataset builder, so a frame with the feet cropped out never feeds noisy
+    leg coordinates into either."""
+    if world_lms is None:
+        return False
+    return all(world_lms[i].visibility >= MIN_VISIBILITY for i in KEY_LANDMARKS)
+
+
+# ── Drawing helpers ────────────────────────────────────────────────────────────
+
 def draw_landmarks(frame: np.ndarray, landmarks: list) -> None:
+    """Draw the pose skeleton onto a BGR frame in place (image landmarks)."""
     h, w = frame.shape[:2]
     pts = [(int(lm.x * w), int(lm.y * h)) for lm in landmarks]
     for a, b in POSE_CONNECTIONS:
@@ -105,6 +161,7 @@ def fit_frame(frame: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
     return out
 
 
+# BGR overlay colour per detector state
 _STATE_COLORS = {
     GROUNDED:     (0, 220, 80),    # green
     AIRBORNE:     (0, 140, 255),   # orange
@@ -113,6 +170,8 @@ _STATE_COLORS = {
 }
 
 def annotate_frame(frame: np.ndarray, det: "SplitStepDetector", hop: bool) -> None:
+    """Draw the count/state overlay (plus a "HOP!" flash) onto a BGR frame in
+    place. det can be any detector exposing .count and .state."""
     h, w = frame.shape[:2]
     state_color = _STATE_COLORS.get(det.state, (255, 255, 255))
     cv2.rectangle(frame, (0, 0), (320, 80), (0, 0, 0), -1)
@@ -128,10 +187,21 @@ def annotate_frame(frame: np.ndarray, det: "SplitStepDetector", hop: bool) -> No
 # ── Foot-state tracker ────────────────────────────────────────────────────────
 
 class FootStateTracker:
+    """
+    Tracks whether each foot is rising, using an EMA of the vertical velocity
+    of its ankle, heel and foot-index landmarks. A foot counts as "up" only
+    while all three of its landmarks are rising faster than VEL_LIFT_MIN.
+
+    process_frame() returns one of: "HOP DETECTED" (both feet lifted within
+    HOP_SYNC_WINDOW of each other), "Sequential step" (both up, lifted apart),
+    "Left Foot in Air", "Right Foot in Air", "Both Feet Grounded".
+    """
+
     _LEFT_LANDMARKS  = (LEFT_ANKLE,  LEFT_HEEL,  LEFT_FOOT_INDEX)
     _RIGHT_LANDMARKS = (RIGHT_ANKLE, RIGHT_HEEL, RIGHT_FOOT_INDEX)
 
-    def __init__(self):
+    def __init__(self, clock=None):
+        self._clock = clock or time.time
         self.left_lift_time  = 0.0
         self.right_lift_time = 0.0
         self.left_is_up  = False
@@ -141,7 +211,7 @@ class FootStateTracker:
         self._vel    = {i: 0.0  for i in all_lms}
 
     def reset(self):
-        self.__init__()
+        self.__init__(self._clock)
 
     def reset_velocities(self) -> None:
         """Zero all EMA velocity estimates on landing so residual momentum can't trigger a phantom hop."""
@@ -170,7 +240,7 @@ class FootStateTracker:
         return all(self._vel[i] > VEL_LIFT_MIN for i in indices)
 
     def process_frame(self, world_landmarks) -> str:
-        current_time = time.time()
+        current_time = self._clock()
         self._update_velocities(world_landmarks)
 
         left_rising  = self._all_rising(self._LEFT_LANDMARKS)
@@ -198,13 +268,33 @@ class FootStateTracker:
 # ── Detector state machine ─────────────────────────────────────────────────────
 
 class SplitStepDetector:
-    def __init__(self):
+    """
+    Rule-based split-step counter.
+
+    FootStateTracker maps each frame to GROUNDED / LEFT_LEG_UP / RIGHT_LEG_UP /
+    AIRBORNE. A split step is counted on a GROUNDED -> AIRBORNE takeoff when
+    every gate passes at that moment:
+
+      - grounded for at least MIN_GROUNDED_FRAMES beforehand
+      - outside HOP_COOLDOWN of the previous counted hop
+      - hip not descending (a squat, not a jump)
+      - both feet rising at similar speeds, from similar heights
+      - ready stance: wrists near the torso and close together, elbows bent
+
+    The hop is confirmed once it stays airborne for MIN_AIRBORNE_FRAMES.
+    Shares the .count / .state / .process() / .reset() interface with LSTMCounter.
+    """
+
+    def __init__(self, clock=None):
+        # clock() -> seconds. Defaults to wall time (live/paced playback); pass a
+        # video-time clock when processing frames faster than real time.
+        self._clock = clock or time.time
         self.reset()
 
     def reset(self):
         self.count             = 0
         self.state             = GROUNDED
-        self._tracker          = FootStateTracker()
+        self._tracker          = FootStateTracker(self._clock)
         self._grounded_streak  = 0
         self._last_grnd_streak = 0
         self._airborne_frames  = 0
@@ -295,7 +385,7 @@ class SplitStepDetector:
         landmarks     — pose_world_landmarks (metres, hip-relative)
         image_lms     — pose_landmarks (normalised image coords, optional)
         """
-        if not all(landmarks[i].visibility >= MIN_VISIBILITY for i in KEY_LANDMARKS):
+        if not key_landmarks_visible(landmarks):
             return False
 
         # Track hip vertical velocity in image space (y increases downward).
@@ -330,7 +420,7 @@ class SplitStepDetector:
         else:
             if prev_state == GROUNDED:
                 self._last_grnd_streak = self._grounded_streak
-            if self.state not in (AIRBORNE,):
+            if self.state != AIRBORNE:
                 self._grounded_streak = 0  # entering a leg-up state
 
         ready = (self._grounded_streak  >= MIN_GROUNDED_FRAMES or
@@ -341,7 +431,7 @@ class SplitStepDetector:
         if self.state == AIRBORNE:
             if prev_state != AIRBORNE:
                 # Just took off: evaluate all gate conditions now.
-                in_cooldown   = (time.time() - self._last_hop_time) < HOP_COOLDOWN
+                in_cooldown   = (self._clock() - self._last_hop_time) < HOP_COOLDOWN
                 hip_dropping  = self._hip_vel_y_img > HIP_DESCEND_MAX
                 self._hop_was_valid   = (not in_cooldown
                                          and not hip_dropping
@@ -360,7 +450,7 @@ class SplitStepDetector:
                 self.count += 1
                 hop = True
                 self._hop_counted  = True
-                self._last_hop_time = time.time()
+                self._last_hop_time = self._clock()
         elif prev_state == AIRBORNE:
             self._airborne_frames = 0
             self._hop_was_valid   = False
@@ -373,9 +463,12 @@ class SplitStepDetector:
 
 class _AnalysisWorker:
     """
-    Base class for analysis workers. Subclasses supply the video source and
-    implement _timestamp_ms() to return a monotonically increasing timestamp
-    in milliseconds for each frame.
+    Base class for the GUI's analysis workers. Subclasses supply the video
+    source and implement _timestamp_ms() to return a monotonically increasing
+    timestamp in milliseconds for each frame. run() is meant to be called on a
+    background thread and returns when stop_event is set or the source ends.
+
+    use_lstm selects LSTMCounter instead of the rule-based SplitStepDetector.
 
     Pushes to frame_queue:
       ("frame", rgb_array, count, state)  — each processed frame
@@ -383,9 +476,11 @@ class _AnalysisWorker:
       ("error", message)                  — if the source cannot be opened
     """
 
-    def __init__(self, frame_queue: queue.Queue, stop_event: threading.Event):
-        self._queue = frame_queue
-        self._stop  = stop_event
+    def __init__(self, frame_queue: queue.Queue, stop_event: threading.Event,
+                 use_lstm: bool = False):
+        self._queue    = frame_queue
+        self._stop     = stop_event
+        self._use_lstm = use_lstm
 
     def _source(self):
         """Return the cv2.VideoCapture source (int or str)."""
@@ -399,17 +494,13 @@ class _AnalysisWorker:
         """Seconds to wait after processing each frame. Override to pace playback."""
         return 0.0
 
-    def _make_detector(self) -> "SplitStepDetector":
+    def _make_detector(self):
+        if self._use_lstm:
+            from .lstm_counter import LSTMCounter  # lazy: only import torch when needed
+            return LSTMCounter()
         return SplitStepDetector()
 
     def run(self) -> None:
-        options = mp_vision.PoseLandmarkerOptions(
-            base_options=mp_tasks.BaseOptions(model_asset_path=MODEL_PATH),
-            running_mode=mp_vision.RunningMode.VIDEO,
-            num_poses=1,
-            min_pose_detection_confidence=0.5,
-            min_tracking_confidence=0.5,
-        )
         detector = self._make_detector()
         cap = cv2.VideoCapture(self._source())
 
@@ -418,24 +509,20 @@ class _AnalysisWorker:
             return
 
         try:
-            with mp_vision.PoseLandmarker.create_from_options(options) as landmarker:
+            with make_pose_landmarker() as landmarker:
                 while not self._stop.is_set():
                     frame_start = time.perf_counter()
                     ret, frame = cap.read()
                     if not ret:
                         break
 
-                    ts     = self._timestamp_ms(cap)
-                    rgb    = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-                    result = landmarker.detect_for_video(mp_img, ts)
+                    world_lms, img_lms = detect_pose(landmarker, frame, self._timestamp_ms(cap))
 
                     hop = False
-                    img_lms = result.pose_landmarks[0] if result.pose_landmarks else None
                     if img_lms:
                         draw_landmarks(frame, img_lms)
-                    if result.pose_world_landmarks:
-                        hop = detector.process(result.pose_world_landmarks[0], img_lms)
+                    if world_lms:
+                        hop = detector.process(world_lms, img_lms)
 
                     annotate_frame(frame, detector, hop)
                     display = fit_frame(frame, CANVAS_W, CANVAS_H)

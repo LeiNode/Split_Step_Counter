@@ -1,20 +1,26 @@
 """
-CSVLabeler — adds a 'label' column to a pose CSV.
+CSVLabeler — adds a 'label' column to a single pose CSV recorded with
+pose_csv_recorder.py, using the hand-entered SPLIT_STEP_RANGES below.
 
 Label is 1 when timestamp_ms falls inside any of the defined split-step
-ranges (boundaries inclusive), 0 otherwise.
+ranges (boundaries inclusive), 0 otherwise. For batches of pre-cut clips use
+build_labeled_dataset.py instead, which reads the ranges from clip filenames.
 
 Usage
 -----
+    python -m split_step.csv_labeler assets/csv_files/pose1.csv [--out OUT.csv]
+
     labeler = CSVLabeler("assets/csv_files/pose1.csv")
-    labeler.label()                          # writes assets/csv_files/pose1_labeled.csv
-    labeler.label("assets/csv_files/my_output.csv")    # custom output path
+    labeler.label()                                   # writes assets/csv_files/pose1_labeled.csv
+    labeler.label("assets/csv_files/my_output.csv")   # custom output path
 """
 
 import math
+from pathlib import Path
+
 import pandas as pd
 
-# (start_ms, end_ms) — both boundaries inclusive
+# (start_ms, end_ms) — both boundaries inclusive. Hand-labeled for pose1.csv.
 SPLIT_STEP_RANGES = [
     (566.667, 766.667),
     (2082.667, 2149.333),
@@ -81,17 +87,24 @@ SPLIT_STEP_RANGES = [
     (485266.667, 487266.667),
 ]
 
-# determines if the timestamp is within the limit
-def _in_any_range(timestamp: float) -> int:
-    for start, end in SPLIT_STEP_RANGES:
-        if math.floor(start) <= timestamp <= math.floor(end):
+
+def in_any_range(timestamp_ms: float, ranges) -> int:
+    """1 if timestamp_ms lies in any (start, end) range (inclusive, ms floored), else 0."""
+    for start, end in ranges:
+        if math.floor(start) <= timestamp_ms <= math.floor(end):
             return 1
     return 0
 
-# class that labels the CSV
+
 class CSVLabeler:
     def __init__(self, input_path: str):
         self.input_path = input_path
+
+    def _read(self) -> pd.DataFrame:
+        df = pd.read_csv(self.input_path)
+        if "timestamp_ms" not in df.columns:
+            raise ValueError(f"'timestamp_ms' column not found in {self.input_path}")
+        return df
 
     def feed_forward(self, output_path: str | None = None) -> pd.DataFrame:
         """
@@ -99,15 +112,15 @@ class CSVLabeler:
         Any such row that already carries label=1 is reset to 0 — undetected
         frames cannot be confirmed split-steps.
 
+        Note: the windowing pipeline (data_windowing/) deliberately drops empty
+        rows instead; this is only for the legacy single-CSV flow.
+
         output_path — defaults to overwriting the input file in-place.
         Returns the processed DataFrame.
         """
-        df = pd.read_csv(self.input_path)
+        df = self._read()
 
-        if "timestamp_ms" not in df.columns:
-            raise ValueError(f"'timestamp_ms' column not found in {self.input_path}")
-
-        meta_cols    = {"timestamp_ms", "split_step_count", "label"}
+        meta_cols     = {"timestamp_ms", "split_step_count", "label"}
         landmark_cols = [c for c in df.columns if c not in meta_cols]
 
         was_missing = df[landmark_cols].isna().all(axis=1)
@@ -138,15 +151,10 @@ class CSVLabeler:
         output_path — defaults to <input_stem>_labeled.csv in the same folder.
         Returns the labeled DataFrame.
         """
-        df = pd.read_csv(self.input_path)
-
-        if "timestamp_ms" not in df.columns:
-            raise ValueError(f"'timestamp_ms' column not found in {self.input_path}")
-
-        df["label"] = df["timestamp_ms"].apply(_in_any_range)
+        df = self._read()
+        df["label"] = df["timestamp_ms"].apply(lambda t: in_any_range(t, SPLIT_STEP_RANGES))
 
         if output_path is None:
-            from pathlib import Path
             p = Path(self.input_path)
             output_path = str(p.with_stem(p.stem + "_labeled"))
 

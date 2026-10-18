@@ -2,6 +2,11 @@
 App — tkinter GUI for the Split Step Counter.
 Lets the user pick a video file or start a live webcam feed, displays the
 annotated video, and shows the running split-step count.
+
+Threading: analysis runs on a daemon worker thread (VideoAnalysis /
+LiveViewAnalysis) that pushes ("frame" | "done" | "error", ...) tuples onto a
+small queue; _poll() drains it on the Tk main loop every ~16 ms, since Tk
+widgets may only be touched from the main thread.
 """
 
 import os
@@ -12,7 +17,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageTk
 
-from .detector import CANVAS_W, CANVAS_H, AIRBORNE, LEFT_LEG_UP, RIGHT_LEG_UP
+from .detector import CANVAS_W, CANVAS_H, GROUNDED, AIRBORNE, LEFT_LEG_UP, RIGHT_LEG_UP
 from .live_view_analysis import LiveViewAnalysis
 from .video_analysis import VideoAnalysis
 
@@ -28,6 +33,14 @@ class App:
     RED    = "#c62828"
     FG     = "#e0e0e0"
     FG_DIM = "#888899"
+
+    # detector state -> (status text, colour)
+    _STATUS = {
+        AIRBORNE:     ("In hop",       ORANGE),
+        LEFT_LEG_UP:  ("Left leg up",  CYAN),
+        RIGHT_LEG_UP: ("Right leg up", PURPLE),
+        GROUNDED:     ("Grounded",     GREEN),
+    }
 
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -63,20 +76,11 @@ class App:
                                     wraplength=220, justify=tk.LEFT)
         self._file_label.pack(anchor=tk.W, pady=(0, 6))
 
-        tk.Button(ctrl, text="Browse video…", command=self._browse,
-                  bg=self.BG2, fg=self.FG, relief=tk.FLAT,
-                  padx=8, pady=6, cursor="hand2",
-                  activebackground=self.ACCENT,
-                  activeforeground="white").pack(fill=tk.X, pady=(0, 6))
+        self._button(ctrl, "Browse video…", self._browse, self.BG2, self.ACCENT,
+                     fg=self.FG, pady=6, font=None).pack(fill=tk.X, pady=(0, 6))
 
-        self._btn_process = tk.Button(ctrl, text="Process Video",
-                                      command=self._start_video,
-                                      state=tk.DISABLED,
-                                      bg=self.ACCENT, fg="white",
-                                      relief=tk.FLAT, padx=8, pady=8,
-                                      font=("Helvetica", 11, "bold"), cursor="hand2",
-                                      activebackground=self.PURPLE,
-                                      activeforeground="white")
+        self._btn_process = self._button(ctrl, "Process Video", self._start_video,
+                                         self.ACCENT, self.PURPLE, state=tk.DISABLED)
         self._btn_process.pack(fill=tk.X, pady=(0, 4))
 
         tk.Checkbutton(ctrl, text="Use LSTM model",
@@ -89,23 +93,12 @@ class App:
 
         ttk.Separator(ctrl, orient="horizontal").pack(fill=tk.X, pady=16)
 
-        self._btn_live = tk.Button(ctrl, text="Start Live View",
-                                   command=self._start_live,
-                                   bg=self.PURPLE, fg="white",
-                                   relief=tk.FLAT, padx=8, pady=8,
-                                   font=("Helvetica", 11, "bold"), cursor="hand2",
-                                   activebackground=self.ACCENT,
-                                   activeforeground="white")
+        self._btn_live = self._button(ctrl, "Start Live View", self._start_live,
+                                      self.PURPLE, self.ACCENT)
         self._btn_live.pack(fill=tk.X, pady=(0, 4))
 
-        self._btn_stop = tk.Button(ctrl, text="Stop",
-                                   command=self._request_stop,
-                                   state=tk.DISABLED,
-                                   bg=self.RED, fg="white",
-                                   relief=tk.FLAT, padx=8, pady=8,
-                                   font=("Helvetica", 11, "bold"), cursor="hand2",
-                                   activebackground="#ef5350",
-                                   activeforeground="white")
+        self._btn_stop = self._button(ctrl, "Stop", self._request_stop,
+                                      self.RED, "#ef5350", state=tk.DISABLED)
         self._btn_stop.pack(fill=tk.X)
 
         ttk.Separator(ctrl, orient="horizontal").pack(fill=tk.X, pady=20)
@@ -128,6 +121,16 @@ class App:
                                  bg="#0d0d1a", highlightthickness=0)
         self._canvas.pack(side=tk.RIGHT)
         self._draw_placeholder()
+
+    @staticmethod
+    def _button(parent, text, command, bg, active_bg, fg="white", pady=8,
+                font=("Helvetica", 11, "bold"), state=tk.NORMAL) -> tk.Button:
+        """Flat, consistently styled button (caller packs it)."""
+        kwargs = {"font": font} if font else {}
+        return tk.Button(parent, text=text, command=command, state=state,
+                         bg=bg, fg=fg, relief=tk.FLAT, padx=8, pady=pady,
+                         cursor="hand2", activebackground=active_bg,
+                         activeforeground="white", **kwargs)
 
     def _draw_placeholder(self):
         self._canvas.delete("all")
@@ -201,14 +204,7 @@ class App:
                     self._canvas.delete("all")
                     self._canvas.create_image(0, 0, anchor=tk.NW, image=self._photo)
                     self._count_var.set(str(count))
-                    if state == AIRBORNE:
-                        self._set_status("In hop", self.ORANGE)
-                    elif state == LEFT_LEG_UP:
-                        self._set_status("Left leg up", self.CYAN)
-                    elif state == RIGHT_LEG_UP:
-                        self._set_status("Right leg up", self.PURPLE)
-                    else:
-                        self._set_status("Grounded", self.GREEN)
+                    self._set_status(*self._STATUS.get(state, self._STATUS[GROUNDED]))
 
                 elif kind == "done":
                     self._count_var.set(str(item[1]))

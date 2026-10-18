@@ -35,7 +35,7 @@ from typing import List
 import numpy as np
 import pandas as pd
 
-# Same order as split_step/lstm_counter.py _LANDMARK_INDICES and the notebook's
+# Same order as split_step/lstm_counter.py LANDMARK_INDICES and the notebook's
 # FEATURE_LANDMARK_NAMES — changing it silently breaks the trained model.
 FEATURE_LANDMARK_NAMES = [
     "left_ankle",    "left_heel",     "left_foot_index",

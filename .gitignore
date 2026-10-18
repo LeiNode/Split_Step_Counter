@@ -9,6 +9,9 @@ ml_env/
 # Downloaded / generated model artifacts
 models/pose_landmarker_full.task
 *.npy
+# ...except the LSTM's normalisation stats, which must ship with split_step_lstm.pt
+!models/feat_mean.npy
+!models/feat_std.npy
 
 # Large recorded assets (kept on disk, not in git history)
 assets/split_step_videos/

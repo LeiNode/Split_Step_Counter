@@ -3,7 +3,7 @@ Split Step Counter — entry point.
 Run this file to launch the application: python main.py
 
 Requires: pip install -r requirements.txt
-The pose model (~6 MB) is downloaded automatically on first run into models/.
+The pose model (~9 MB) is downloaded automatically on first run into models/.
 """
 
 import tkinter as tk

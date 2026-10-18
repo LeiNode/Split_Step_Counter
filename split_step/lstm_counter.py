@@ -7,6 +7,10 @@ state across frames and emits one probability per frame directly — no
 rolling buffer, no re-encoding a window from scratch every call. This also
 removes the old ~333ms mandatory warm-up before any prediction could be made.
 
+Per-frame features: 16 landmarks x (x, y, z) world positions, plus their
+velocities (units/second) against the previous frame = 96 values, normalised
+with the training-set mean/std.
+
 Requires feat_mean.npy and feat_std.npy saved from the notebook:
     np.save("models/feat_mean.npy", feat_mean)
     np.save("models/feat_std.npy",  feat_std)
@@ -22,27 +26,27 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from .detector import GROUNDED, AIRBORNE
+from .detector import (
+    GROUNDED, AIRBORNE,
+    LEFT_ANKLE, LEFT_HEEL, LEFT_FOOT_INDEX,
+    RIGHT_ANKLE, RIGHT_HEEL, RIGHT_FOOT_INDEX,
+    LEFT_KNEE, RIGHT_KNEE, LEFT_HIP, RIGHT_HIP,
+    LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_ELBOW, RIGHT_ELBOW,
+    LEFT_WRIST, RIGHT_WRIST,
+)
 from .paths import SPLIT_STEP_LSTM_PATH, FEAT_MEAN_PATH, FEAT_STD_PATH
 
-# MediaPipe landmark indices, in the order expected by the model's feature vector
+# Landmarks in the order expected by the model's feature vector. Must match
+# FEATURE_LANDMARK_NAMES in the notebook and data_windowing/window_dataset.py —
+# reordering silently breaks the trained model.
 LANDMARK_INDICES = [
-    27,  # left_ankle
-    29,  # left_heel
-    31,  # left_foot_index
-    28,  # right_ankle
-    30,  # right_heel
-    32,  # right_foot_index
-    25,  # left_knee
-    26,  # right_knee
-    23,  # left_hip
-    24,  # right_hip
-    11,  # left_shoulder
-    12,  # right_shoulder
-    13,  # left_elbow
-    14,  # right_elbow
-    15,  # left_wrist
-    16,  # right_wrist
+    LEFT_ANKLE,  LEFT_HEEL,  LEFT_FOOT_INDEX,
+    RIGHT_ANKLE, RIGHT_HEEL, RIGHT_FOOT_INDEX,
+    LEFT_KNEE,     RIGHT_KNEE,
+    LEFT_HIP,      RIGHT_HIP,
+    LEFT_SHOULDER, RIGHT_SHOULDER,
+    LEFT_ELBOW,    RIGHT_ELBOW,
+    LEFT_WRIST,    RIGHT_WRIST,
 ]
 
 N_POS  = len(LANDMARK_INDICES) * 3   # 48  (x, y, z per landmark)
@@ -121,7 +125,14 @@ class SplitStepLSTM(nn.Module):
 class LSTMCounter:
     """
     Drop-in replacement for SplitStepDetector that uses the stateful LSTM.
-    Exposes the same .count, .state, and .process() interface.
+    Exposes the same .count, .state, .process() and .reset() interface.
+
+    State is only ever GROUNDED or AIRBORNE (model probability >= threshold).
+    A count is registered on each rising edge, at most once per _COOLDOWN.
+
+    clock() -> seconds; defaults to wall time. Pass a video-time clock when
+    feeding frames faster than real time, since velocities and the cooldown
+    are computed from it.
     """
 
     def __init__(
@@ -130,10 +141,12 @@ class LSTMCounter:
         mean_path:  str = FEAT_MEAN_PATH,
         std_path:   str = FEAT_STD_PATH,
         device:     Optional[str] = None,
+        clock=None,
     ):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
+        self._clock = clock or time.time
 
         self._mean = np.load(mean_path)
         self._std  = np.load(std_path)
@@ -144,18 +157,12 @@ class LSTMCounter:
         )
         self._model.eval()
 
-        self.count   = 0
-        self.state   = GROUNDED
-        self._active = False
-        self._last_t = 0.0
-
-        self._prev_pos      = None
-        self._hidden        = None
-        self._last_call_t   = None
+        self.reset()
 
     def process(self, world_landmarks, image_lms=None) -> bool:
-        """Feed one frame. Returns True when a new split step is counted."""
-        now = time.time()
+        """Feed one frame. Returns True when a new split step is counted.
+        image_lms is accepted for interface parity with SplitStepDetector and ignored."""
+        now = self._clock()
         dt  = (now - self._last_call_t) if self._last_call_t is not None else None
         self._last_call_t = now
 
@@ -183,7 +190,7 @@ class LSTMCounter:
 
         hop = False
         if is_on and not self._active:
-            now_count = time.time()
+            now_count = self._clock()
             if (now_count - self._last_t) >= _COOLDOWN:
                 self.count  += 1
                 self._last_t = now_count
@@ -192,6 +199,7 @@ class LSTMCounter:
         return hop
 
     def reset(self):
+        """Zero the count and drop all carried state (hidden state, last position)."""
         self.count   = 0
         self.state   = GROUNDED
         self._active = False
