@@ -88,6 +88,7 @@ class CountResult(BaseModel):
     duration_ms: float
     fps: float
     processing_s: float
+    session: dict = {}
 
 
 class S3Video(BaseModel):

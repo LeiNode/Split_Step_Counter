@@ -40,6 +40,12 @@ def test_count_upload(model):
     assert body["count"] == len(body["events"]) >= 0
     assert body["frames"] > 300 and 0 < body["frames_with_pose"] <= body["frames"]
     assert body["duration_ms"] > 10_000
+    s = body["session"]
+    assert 0 < s["pose_coverage"] <= 1 and s["duration_s"] > 10 and s["tips"]
+    for e in body["events"]:
+        assert {"hop_height", "landing_knee_angle", "landing_stance_ratio"} <= e.keys()
+        if e["landing_knee_angle"] is not None:
+            assert 30 < e["landing_knee_angle"] <= 180
 
 
 @needs_video

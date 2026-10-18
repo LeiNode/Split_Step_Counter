@@ -22,6 +22,8 @@ import time
 import cv2
 
 from .detector import download_model, make_pose_landmarker, detect_pose, SplitStepDetector
+from .pose_track import PoseTrackBuilder
+from .tennis_metrics import session_summary, split_step_quality
 
 MODELS = ("lstm", "rules")
 
@@ -47,7 +49,10 @@ def analyze_video(video_path: str, model: str = "lstm") -> dict:
     Returns a JSON-serialisable dict:
         count            — number of split steps
         model            — the model used
-        events           — [{"timestamp_ms": ...}] one per counted split step
+        events           — one dict per counted split step: timestamp_ms plus
+                           quality metrics (hop_height, landing_knee_angle,
+                           landing_stance_ratio, landing_ms; see tennis_metrics)
+        session          — whole-video stats and coaching tips (session_summary)
         frames           — frames decoded
         frames_with_pose — frames where a person was detected
         duration_ms      — timestamp of the last decoded frame
@@ -67,6 +72,8 @@ def analyze_video(video_path: str, model: str = "lstm") -> dict:
     video_ts = [0.0]  # seconds; the detectors read this as their clock
     detector = _make_detector(model, clock=lambda: video_ts[0])
 
+    track = PoseTrackBuilder(int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                             int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
     events, frames, with_pose, last_ts_ms = [], 0, 0, 0.0
     try:
         with make_pose_landmarker() as landmarker:
@@ -84,6 +91,7 @@ def analyze_video(video_path: str, model: str = "lstm") -> dict:
                 video_ts[0] = ts_ms / 1000.0
 
                 world_lms, img_lms = detect_pose(landmarker, frame, ts_ms)
+                track.add(ts_ms, world_lms, img_lms)
                 if world_lms is None:
                     continue
                 with_pose += 1
@@ -96,10 +104,15 @@ def analyze_video(video_path: str, model: str = "lstm") -> dict:
     if frames == 0:
         raise VideoError("The video contains no decodable frames.")
 
+    pose_track = track.build()
+    for e in events:
+        e.update(split_step_quality(pose_track, e["timestamp_ms"]))
+
     return {
         "count":            detector.count,
         "model":            model,
         "events":           events,
+        "session":          session_summary(pose_track, events),
         "frames":           frames,
         "frames_with_pose": with_pose,
         "duration_ms":      round(last_ts_ms, 1),
