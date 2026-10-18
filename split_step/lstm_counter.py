@@ -27,7 +27,7 @@ import torch
 import torch.nn as nn
 
 from .detector import (
-    GROUNDED, AIRBORNE,
+    GROUNDED, AIRBORNE, key_landmarks_visible,
     LEFT_ANKLE, LEFT_HEEL, LEFT_FOOT_INDEX,
     RIGHT_ANKLE, RIGHT_HEEL, RIGHT_FOOT_INDEX,
     LEFT_KNEE, RIGHT_KNEE, LEFT_HIP, RIGHT_HIP,
@@ -133,6 +133,14 @@ class LSTMCounter:
     clock() -> seconds; defaults to wall time. Pass a video-time clock when
     feeding frames faster than real time, since velocities and the cooldown
     are computed from it.
+
+    require_full_pose (default True) skips the model entirely on frames where
+    any KEY_LANDMARKS point (hips, ankles, heels, toes) isn't visible: the
+    model was only ever trained on such frames (build_labeled_dataset drops
+    the rest), so its output on a cropped-feet frame is meaningless. A skipped
+    stretch longer than _GAP_THRESHOLD_S restarts the hidden state, exactly
+    like a gap in the training data. .tracking says whether the last frame
+    was used.
     """
 
     def __init__(
@@ -142,11 +150,13 @@ class LSTMCounter:
         std_path:   str = FEAT_STD_PATH,
         device:     Optional[str] = None,
         clock=None,
+        require_full_pose: bool = True,
     ):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
         self._clock = clock or time.time
+        self.require_full_pose = require_full_pose
 
         self._mean = np.load(mean_path)
         self._std  = np.load(std_path)
@@ -162,6 +172,10 @@ class LSTMCounter:
     def process(self, world_landmarks, image_lms=None) -> bool:
         """Feed one frame. Returns True when a new split step is counted.
         image_lms is accepted for interface parity with SplitStepDetector and ignored."""
+        if self.require_full_pose and not key_landmarks_visible(world_landmarks):
+            self.tracking = False
+            return False
+        self.tracking = True
         now = self._clock()
         dt  = (now - self._last_call_t) if self._last_call_t is not None else None
         self._last_call_t = now
@@ -200,9 +214,10 @@ class LSTMCounter:
 
     def reset(self):
         """Zero the count and drop all carried state (hidden state, last position)."""
-        self.count   = 0
-        self.state   = GROUNDED
-        self._active = False
+        self.count    = 0
+        self.state    = GROUNDED
+        self.tracking = False
+        self._active  = False
         self._last_t = 0.0
 
         self._prev_pos    = None

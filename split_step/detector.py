@@ -80,6 +80,7 @@ KEY_LANDMARKS = [LEFT_HIP, RIGHT_HIP, LEFT_ANKLE, RIGHT_ANKLE,
                  LEFT_HEEL, RIGHT_HEEL, LEFT_FOOT_INDEX, RIGHT_FOOT_INDEX]
 
 # Detector states (also shown in the GUI status line)
+NOT_TRACKED   = "not_tracked"   # GUI-only: no usable pose this frame
 GROUNDED      = "grounded"
 AIRBORNE      = "airborne"
 LEFT_LEG_UP   = "left_leg_up"
@@ -282,7 +283,9 @@ class SplitStepDetector:
       - ready stance: wrists near the torso and close together, elbows bent
 
     The hop is confirmed once it stays airborne for MIN_AIRBORNE_FRAMES.
-    Shares the .count / .state / .process() / .reset() interface with LSTMCounter.
+    Frames without all KEY_LANDMARKS visible are ignored (.tracking = False).
+    Shares the .count / .state / .tracking / .process() / .reset() interface
+    with LSTMCounter.
     """
 
     def __init__(self, clock=None):
@@ -294,6 +297,7 @@ class SplitStepDetector:
     def reset(self):
         self.count             = 0
         self.state             = GROUNDED
+        self.tracking          = False
         self._tracker          = FootStateTracker(self._clock)
         self._grounded_streak  = 0
         self._last_grnd_streak = 0
@@ -385,7 +389,8 @@ class SplitStepDetector:
         landmarks     — pose_world_landmarks (metres, hip-relative)
         image_lms     — pose_landmarks (normalised image coords, optional)
         """
-        if not key_landmarks_visible(landmarks):
+        self.tracking = key_landmarks_visible(landmarks)
+        if not self.tracking:
             return False
 
         # Track hip vertical velocity in image space (y increases downward).
@@ -471,7 +476,9 @@ class _AnalysisWorker:
     use_lstm selects LSTMCounter instead of the rule-based SplitStepDetector.
 
     Pushes to frame_queue:
-      ("frame", rgb_array, count, state)  — each processed frame
+      ("frame", rgb_array, count, state)  — each processed frame; state is
+                                            NOT_TRACKED when the player's lower
+                                            body isn't fully visible
       ("done",  final_count)              — when source is exhausted or stopped
       ("error", message)                  — if the source cannot be opened
     """
@@ -523,6 +530,7 @@ class _AnalysisWorker:
                         draw_landmarks(frame, img_lms)
                     if world_lms:
                         hop = detector.process(world_lms, img_lms)
+                    tracked = bool(world_lms) and detector.tracking
 
                     annotate_frame(frame, detector, hop)
                     display = fit_frame(frame, CANVAS_W, CANVAS_H)
@@ -530,7 +538,8 @@ class _AnalysisWorker:
 
                     try:
                         self._queue.put_nowait(
-                            ("frame", rgb_out, detector.count, detector.state)
+                            ("frame", rgb_out, detector.count,
+                             detector.state if tracked else NOT_TRACKED)
                         )
                     except queue.Full:
                         pass

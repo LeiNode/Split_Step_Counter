@@ -47,6 +47,8 @@ from pydantic import BaseModel
 from split_step.analyze import VideoError, analyze_video
 
 ModelName = Literal["lstm", "rules"]
+FULL_POSE_QUERY = Query(True, description="Skip the LSTM on frames where the hips, ankles, "
+                                          "heels and toes aren't all visible")
 
 MAX_UPLOAD_BYTES = int(float(os.environ.get("MAX_UPLOAD_MB", "200")) * 1024 * 1024)
 UPLOAD_PREFIX    = "uploads/"
@@ -85,6 +87,7 @@ class CountResult(BaseModel):
     events: list[dict]
     frames: int
     frames_with_pose: int
+    frames_tracked: int
     duration_ms: float
     fps: float
     processing_s: float
@@ -132,9 +135,9 @@ def _s3_client():
     )
 
 
-def _analyze_file(path: str, model: str) -> dict:
+def _analyze_file(path: str, model: str, require_full_pose: bool = True) -> dict:
     try:
-        return analyze_video(path, model)
+        return analyze_video(path, model, require_full_pose=require_full_pose)
     except VideoError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -150,6 +153,7 @@ def health() -> dict:
 def count_upload(
     file: UploadFile = File(..., description="Video file (mp4, mov, webm, ...)"),
     model: ModelName = Query("lstm"),
+    require_full_pose: bool = FULL_POSE_QUERY,
 ) -> dict:
     fd, path = tempfile.mkstemp(suffix=_suffix(file.filename))
     try:
@@ -163,7 +167,7 @@ def count_upload(
                 out.write(chunk)
         if written == 0:
             raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-        return _analyze_file(path, model)
+        return _analyze_file(path, model, require_full_pose)
     finally:
         os.remove(path)
 
@@ -186,7 +190,8 @@ def upload_url(req: UploadRequest) -> dict:
 
 
 @app.post("/v1/count/s3", response_model=CountResult, dependencies=[Depends(require_api_key)])
-def count_s3(video: S3Video, model: ModelName = Query("lstm")) -> dict:
+def count_s3(video: S3Video, model: ModelName = Query("lstm"),
+             require_full_pose: bool = FULL_POSE_QUERY) -> dict:
     """Analyse a video stored in S3. Preferred on Lambda/API Gateway, whose
     request bodies are capped at a few MB. The service's IAM role needs
     s3:GetObject on the object. When UPLOAD_BUCKET is set, only keys issued by
@@ -208,7 +213,7 @@ def count_s3(video: S3Video, model: ModelName = Query("lstm")) -> dict:
             raise HTTPException(status_code=status, detail=f"S3 error: {code or e}")
         except BotoCoreError as e:
             raise HTTPException(status_code=502, detail=f"S3 error: {e}")
-        return _analyze_file(path, model)
+        return _analyze_file(path, model, require_full_pose)
     finally:
         if os.path.exists(path):
             os.remove(path)

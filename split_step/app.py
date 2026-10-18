@@ -17,7 +17,8 @@ from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageTk
 
-from .detector import CANVAS_W, CANVAS_H, GROUNDED, AIRBORNE, LEFT_LEG_UP, RIGHT_LEG_UP
+from .detector import (CANVAS_W, CANVAS_H, GROUNDED, AIRBORNE, LEFT_LEG_UP,
+                       RIGHT_LEG_UP, NOT_TRACKED)
 from .live_view_analysis import LiveViewAnalysis
 from .video_analysis import VideoAnalysis
 
@@ -40,6 +41,7 @@ class App:
         LEFT_LEG_UP:  ("Left leg up",  CYAN),
         RIGHT_LEG_UP: ("Right leg up", PURPLE),
         GROUNDED:     ("Grounded",     GREEN),
+        NOT_TRACKED:  ("Feet out of view", FG_DIM),
     }
 
     def __init__(self, root: tk.Tk):

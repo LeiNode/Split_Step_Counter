@@ -32,19 +32,21 @@ class VideoError(ValueError):
     """The input can't be opened or decoded as a video."""
 
 
-def _make_detector(model: str, clock):
+def _make_detector(model: str, clock, require_full_pose: bool = True):
     if model == "lstm":
         from .lstm_counter import LSTMCounter  # lazy: only import torch when needed
-        return LSTMCounter(clock=clock)
+        return LSTMCounter(clock=clock, require_full_pose=require_full_pose)
     if model == "rules":
         return SplitStepDetector(clock=clock)
     raise ValueError(f"model must be one of {MODELS}, got {model!r}")
 
 
-def analyze_video(video_path: str, model: str = "lstm") -> dict:
+def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool = True) -> dict:
     """Count split steps in a video file.
 
-    model — "lstm" (stateful LSTM, the GUI default) or "rules" (SplitStepDetector).
+    model             — "lstm" (stateful LSTM, the GUI default) or "rules" (SplitStepDetector).
+    require_full_pose — skip the LSTM on frames where the hips/ankles/heels/toes
+                        aren't all visible (the rules detector always does this).
 
     Returns a JSON-serialisable dict:
         count            — number of split steps
@@ -55,6 +57,8 @@ def analyze_video(video_path: str, model: str = "lstm") -> dict:
         session          — whole-video stats and coaching tips (session_summary)
         frames           — frames decoded
         frames_with_pose — frames where a person was detected
+        frames_tracked   — frames the counter actually used (full lower body visible,
+                           unless require_full_pose=False with the LSTM)
         duration_ms      — timestamp of the last decoded frame
         fps              — the file's reported frame rate (0 if unknown)
         processing_s     — wall time spent
@@ -70,11 +74,11 @@ def analyze_video(video_path: str, model: str = "lstm") -> dict:
 
     started  = time.perf_counter()
     video_ts = [0.0]  # seconds; the detectors read this as their clock
-    detector = _make_detector(model, clock=lambda: video_ts[0])
+    detector = _make_detector(model, clock=lambda: video_ts[0], require_full_pose=require_full_pose)
 
     track = PoseTrackBuilder(int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
                              int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-    events, frames, with_pose, last_ts_ms = [], 0, 0, 0.0
+    events, frames, with_pose, tracked, last_ts_ms = [], 0, 0, 0, 0.0
     try:
         with make_pose_landmarker() as landmarker:
             while True:
@@ -95,7 +99,9 @@ def analyze_video(video_path: str, model: str = "lstm") -> dict:
                 if world_lms is None:
                     continue
                 with_pose += 1
-                if detector.process(world_lms, img_lms):
+                hop = detector.process(world_lms, img_lms)
+                tracked += detector.tracking
+                if hop:
                     events.append({"timestamp_ms": round(ts_ms, 1)})
         fps = cap.get(cv2.CAP_PROP_FPS)
     finally:
@@ -115,6 +121,7 @@ def analyze_video(video_path: str, model: str = "lstm") -> dict:
         "session":          session_summary(pose_track, events),
         "frames":           frames,
         "frames_with_pose": with_pose,
+        "frames_tracked":   tracked,
         "duration_ms":      round(last_ts_ms, 1),
         "fps":              round(fps, 3) if fps and fps > 0 else 0,
         "processing_s":     round(time.perf_counter() - started, 3),
@@ -127,5 +134,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Count split steps in a video file.")
     parser.add_argument("video", help="Path to the video file")
     parser.add_argument("--model", choices=MODELS, default="lstm")
+    parser.add_argument("--allow-partial-pose", action="store_true",
+                        help="Run the LSTM even when the lower body isn't fully visible")
     args = parser.parse_args()
-    print(json.dumps(analyze_video(args.video, args.model), indent=2))
+    print(json.dumps(analyze_video(args.video, args.model,
+                                   require_full_pose=not args.allow_partial_pose), indent=2))
