@@ -92,6 +92,10 @@
       <button id="go" disabled>Analyse</button>
     </div>
     <p class="status" id="status"></p>
+    <p class="row" id="downloads" data-feature="report_download" hidden>
+      <button class="linkish" id="dl-json">Download report (JSON)</button>
+      <button class="linkish" id="dl-csv">Download shots (CSV)</button>
+    </p>
     <video id="player" controls playsinline hidden></video>
     <div id="timeline-box" hidden>
       <div class="timeline" id="timeline" aria-label="Shot timeline"></div>
@@ -268,15 +272,19 @@
     const counts = Object.entries(st.summary).map(([k, v]) => stat(k[0].toUpperCase() + k.slice(1) + "s", v.count));
     const t = res.timing;
     $("stroke-stats").replaceChildren(stat("Swings", st.swings.length), stat("Hand", st.hand), ...counts,
-      ...(t && t.shots ? [stat("Split step before shot", `${t.shots_with_split_step} of ${t.shots}`)] : []));
-    const cols = [["Time", (s) => seekLink(s.timestamp_ms)], ["Stroke", (s) => s.stroke], ["Wrist speed", (s) => fmt(s.peak_wrist_speed, 1, " m/s")]];
+      ...(t && t.shots ? [stat("Split step before shot", `${t.shots_with_split_step} of ${t.shots}`)] : []),
+      ...(res.rallies && res.rallies.summary.rallies ? [stat("Rallies", res.rallies.summary.rallies),
+                                                         stat("Longest rally", res.rallies.summary.longest + " shots")] : []));
+    const cols = [["Time", (s) => seekLink(s.timestamp_ms)], ["Stroke", (s) => s.stroke]];
+    if (res.rallies) cols.push(["Rally", (s) => s.rally]);
+    cols.push(["Wrist speed", (s) => fmt(s.peak_wrist_speed, 1, " m/s")]);
     if (serve) cols.push(["Reach", (s) => fmt(s.contact_reach_m, 2, " m")], ["Toss", (s) => fmt(s.toss_height_m, 2, " m")],
                          ["Elbow", (s) => fmt(s.elbow_extension, 0, "°")], ["Trophy knee", (s) => fmt(s.trophy_knee_angle, 0, "°")]);
     else cols.push(["Contact height", (s) => fmt(s.contact_height)], ["Shoulder turn", (s) => fmt(s.shoulder_turn_deg, 0, "°")],
                    ["Finish", (s) => fmt(s.finish_above_shoulder_m, 2, " m")], ["Knee load", (s) => fmt(s.load_knee_angle, 0, "°")]);
     if (t) cols.push(["Split step before", (s) => s.split_step_lead_ms == null ? "none" : fmt(s.split_step_lead_ms / 1000, 1, " s")]);
     fillTable($("stroke-table"), cols, st.swings);
-    fillTips($("stroke-tips"), [...st.tips, ...(t ? t.tips : [])]);
+    fillTips($("stroke-tips"), [...st.tips, ...(t ? t.tips : []), ...(res.rallies ? res.rallies.summary.tips : [])]);
   }
 
   // ── Timeline ─────────────────────────────────────────────────────────────
@@ -306,6 +314,31 @@
       span.append(KIND_LABEL[k] || k);
       return span;
     }));
+  }
+
+  // ── Report download ──────────────────────────────────────────────────────
+  let LAST = null;  // {res, file}
+
+  function download(name, type, text) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function toCsv(res) {
+    const rows = [
+      ...(res.events || []).map((e) => ({ type: e.during_swing ? "swing hop" : "split step", ...e })),
+      ...(res.strokes ? res.strokes.swings.map((s) => ({ type: s.stroke, ...s })) : []),
+    ].sort((a, b) => a.timestamp_ms - b.timestamp_ms);
+    const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+    const cell = (v) => v == null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+    return [cols.join(","), ...rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n") + "\n";
+  }
+
+  function reportName(ext) {
+    const base = LAST.file.replace(/\.[^.]+$/, "").replace(/[^\w-]+/g, "_").slice(0, 40) || "session";
+    return `${base}-tennis-report.${ext}`;
   }
 
   // ── Session history (this browser only) ──────────────────────────────────
@@ -378,6 +411,8 @@
       renderStrokes(res);
       renderTimeline(res);
       saveToHistory(res, file.name, mode());
+      LAST = { res, file: file.name };
+      if ($("downloads")) $("downloads").hidden = false;
     } catch (e) {
       status("Error: " + e.message, true);
     } finally {
@@ -386,6 +421,8 @@
   });
 
   $("clear-history")?.addEventListener("click", () => { writeHistory([]); renderHistory(); });
+  $("dl-json")?.addEventListener("click", () => download(reportName("json"), "application/json", JSON.stringify(LAST.res, null, 2)));
+  $("dl-csv")?.addEventListener("click", () => download(reportName("csv"), "text/csv", toCsv(LAST.res)));
   loadFeatures().then(renderHistory);
 </script>
 </body>

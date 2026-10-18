@@ -33,7 +33,7 @@ async function load(flags, { uploadsConfigured = false } = {}) {
   return { dom, doc: dom.window.document, calls };
 }
 
-const ALL = { session_history: true, split_step_timing: true, split_step_counting: true, split_step_metrics: true, stroke_training: true,
+const ALL = { report_download: true, rally_stats: true, session_history: true, split_step_timing: true, split_step_counting: true, split_step_metrics: true, stroke_training: true,
   forehand_training: true, backhand_training: true, serve_training: true, auto_stroke_detection: true,
   lstm_model: true, rules_model: true, direct_upload: true, browser_uploads: true, live_view: true };
 
@@ -85,6 +85,24 @@ function chooseFile(dom) {
   last.click();
   check(doc.getElementById("player").currentTime > 0, "clicking a marker seeks the video");
 
+  // Rallies
+  check(doc.getElementById("stroke-stats").textContent.includes("Longest rally"), "rally stats shown");
+  check(doc.getElementById("stroke-table").textContent.includes("Rally"), "rally column shown");
+
+  // Downloads: capture the generated CSV
+  let saved = null;
+  dom.window.URL.createObjectURL = (blob) => { saved = blob; return "blob:x"; };
+  check(!doc.getElementById("downloads").hidden, "download buttons shown");
+  doc.getElementById("dl-csv").click();
+  const readBlob = (b) => new Promise((r) => { const fr = new dom.window.FileReader(); fr.onload = () => r(fr.result); fr.readAsText(b); });
+  const csv = saved ? await readBlob(saved) : "";
+  const lines = csv.trim().split("\n");
+  check(lines.length === 1 + analysis.events.length + analysis.strokes.swings.length, `CSV has a row per event and swing (${lines.length - 1})`);
+  check(lines[0].startsWith("type,timestamp_ms"), "CSV header: " + lines[0].slice(0, 40));
+  check(csv.includes("forehand") && csv.includes("split step"), "CSV contains shots and split steps");
+  doc.getElementById("dl-json").click();
+  check(saved && JSON.parse(await readBlob(saved)).count === analysis.count, "JSON report round-trips");
+
   // History: saved after each analysis, clearable
   const rows = () => doc.querySelectorAll("#history-table tr").length - 1;
   check(!doc.getElementById("history").hidden && rows() === 1, "history has the session");
@@ -98,8 +116,9 @@ function chooseFile(dom) {
   // 2. Serve + auto off, rules model off
   ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
   check(modes().join() === "split,forehand,backhand", "disabled modes removed: " + modes());
-  ({ dom, doc } = await load({ ...ALL, session_history: false }));
+  ({ dom, doc } = await load({ ...ALL, session_history: false, report_download: false }));
   check(!doc.getElementById("history"), "history section removed when switched off");
+  check(!doc.getElementById("downloads"), "download buttons removed when switched off");
   ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
   check([...doc.querySelectorAll("#model option")].map((o) => o.value).join() === "lstm", "disabled model removed");
 

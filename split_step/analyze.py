@@ -28,6 +28,7 @@ from .detector import download_model, make_pose_landmarker, detect_pose, SplitSt
 from .pose_track import PoseTrackBuilder
 from .strokes import DRILLS, HANDS, stroke_report
 from .tennis_metrics import session_summary, split_step_quality
+from .rallies import find_rallies
 from .timing import link_split_steps
 
 MODELS = ("lstm", "rules")
@@ -49,7 +50,7 @@ def _make_detector(model: str, clock, require_full_pose: bool = True):
 def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool = True,
                   drill: str | None = None, hand: str = "auto",
                   count_split_steps: bool = True, split_step_metrics: bool = True,
-                  split_step_timing: bool = True) -> dict:
+                  split_step_timing: bool = True, rally_stats: bool = True) -> dict:
     """Analyse a video file.
 
     model              — split-step counter: "lstm" (GUI default) or "rules"
@@ -62,6 +63,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     split_step_metrics — False skips per-split-step quality metrics + session summary
     split_step_timing  — with counting and a drill: link split steps to the shots
                          that follow (see timing.py)
+    rally_stats        — with a drill: group swings into rallies (see rallies.py)
 
     Returns a JSON-serialisable dict. Always present:
         frames, frames_with_pose, duration_ms, fps, processing_s
@@ -74,6 +76,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     With counting, a drill and split_step_timing:
         timing  — link_split_steps(): share of shots preceded by a split step;
                   also adds events[].during_swing and swings[].split_step_lead_ms
+    With a drill and rally_stats:
+        rallies — find_rallies(): rallies list + summary; adds swings[].rally
     Raises VideoError if the file can't be opened or has no frames.
     """
     if model not in MODELS:
@@ -141,6 +145,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
         result["strokes"] = stroke_report(pose_track, drill, hand)
         if detector is not None and split_step_timing:
             result["timing"] = link_split_steps(events, result["strokes"]["swings"])
+        if rally_stats:
+            result["rallies"] = find_rallies(result["strokes"]["swings"])
 
     result.update({
         "frames":           frames,

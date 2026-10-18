@@ -114,7 +114,8 @@
         "shoulder_turn_deg": 124.1,
         "finish_above_shoulder_m": 0.22,
         "load_knee_angle": 115.6,
-        "split_step_lead_ms": null
+        "split_step_lead_ms": null,
+        "rally": 1
       },
       {
         "timestamp_ms": 1700.0,
@@ -125,7 +126,8 @@
         "shoulder_turn_deg": 52.6,
         "finish_above_shoulder_m": 0.06,
         "load_knee_angle": 139.6,
-        "split_step_lead_ms": null
+        "split_step_lead_ms": null,
+        "rally": 1
       },
       {
         "timestamp_ms": 3266.7,
@@ -136,7 +138,8 @@
         "shoulder_turn_deg": 144.5,
         "finish_above_shoulder_m": 0.3,
         "load_knee_angle": 122.5,
-        "split_step_lead_ms": null
+        "split_step_lead_ms": null,
+        "rally": 1
       },
       {
         "timestamp_ms": 5766.7,
@@ -147,7 +150,8 @@
         "shoulder_turn_deg": 156.6,
         "finish_above_shoulder_m": 0.05,
         "load_knee_angle": 117.3,
-        "split_step_lead_ms": 1266.7
+        "split_step_lead_ms": 1266.7,
+        "rally": 1
       },
       {
         "timestamp_ms": 8433.3,
@@ -158,7 +162,8 @@
         "shoulder_turn_deg": 147.2,
         "finish_above_shoulder_m": 0.07,
         "load_knee_angle": 119.4,
-        "split_step_lead_ms": null
+        "split_step_lead_ms": null,
+        "rally": 1
       },
       {
         "timestamp_ms": 10833.3,
@@ -169,7 +174,8 @@
         "shoulder_turn_deg": 137.1,
         "finish_above_shoulder_m": 0.14,
         "load_knee_angle": 121.4,
-        "split_step_lead_ms": null
+        "split_step_lead_ms": null,
+        "rally": 1
       },
       {
         "timestamp_ms": 13200.0,
@@ -180,7 +186,8 @@
         "shoulder_turn_deg": 122.0,
         "finish_above_shoulder_m": 0.12,
         "load_knee_angle": 104.5,
-        "split_step_lead_ms": null
+        "split_step_lead_ms": null,
+        "rally": 1
       },
       {
         "timestamp_ms": 15500.0,
@@ -191,7 +198,8 @@
         "shoulder_turn_deg": 134.5,
         "finish_above_shoulder_m": 0.07,
         "load_knee_angle": 98.4,
-        "split_step_lead_ms": 1233.3
+        "split_step_lead_ms": 1233.3,
+        "rally": 1
       }
     ],
     "summary": {
@@ -310,9 +318,29 @@
       "Only 2 of 8 shots had a split step before them. Make it a habit: a small hop as your opponent hits, then move."
     ]
   },
+  "rallies": {
+    "rallies": [
+      {
+        "start_ms": 733.3,
+        "end_ms": 15500.0,
+        "shots": 8,
+        "strokes": {
+          "forehand": 6,
+          "unknown": 1,
+          "backhand": 1
+        }
+      }
+    ],
+    "summary": {
+      "rallies": 1,
+      "mean_shots": 8.0,
+      "longest": 8,
+      "tips": []
+    }
+  },
   "frames": 572,
   "frames_with_pose": 572,
   "duration_ms": 19033.3,
   "fps": 30.0,
-  "processing_s": 8.325
+  "processing_s": 8.424
 }

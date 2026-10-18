@@ -14,6 +14,7 @@ analyses run on them:
 - **Stroke training.** Detects swings and gives feedback per stroke:
   - forehand / backhand: contact height, shoulder turn, follow-through, knee load
   - serve: reach, toss height, elbow extension, trophy-position knee bend
+- **Rallies.** Groups swings into rallies (shots per rally, longest rally).
 - **Split step → shot timing.** Shows which shots had a split step
   0.4–2.5 s before them. Hops that happen during a swing are flagged, not
   counted as split steps.
@@ -173,6 +174,8 @@ everywhere:
 | `direct_upload`, `browser_uploads` | API upload routes |
 | `live_view` | Webcam button in the desktop GUI |
 | `session_history` | Web app: progress table of past sessions, saved in the browser |
+| `rally_stats` | Group swings into rallies: shots per rally, longest rally |
+| `report_download` | Web app: download results as JSON or CSV |
 
 Everything is on by default. You can override switches in two places, and
 the environment variable wins:

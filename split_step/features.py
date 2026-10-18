@@ -28,12 +28,14 @@ DEFAULTS: dict[str, tuple[bool, str]] = {
     "backhand_training":   (True,  "Backhand drill"),
     "serve_training":      (True,  "Serve drill"),
     "auto_stroke_detection": (True, "'auto' drill: classify each swing (forehand/backhand is experimental)"),
+    "rally_stats":         (True,  "Group swings into rallies: shots per rally, longest rally"),
     "split_step_timing":   (True,  "Link split steps to the following shots (needs counting + stroke training)"),
     "lstm_model":          (True,  "LSTM split-step model"),
     "rules_model":         (True,  "Rule-based split-step model"),
     "direct_upload":       (True,  "API: POST /v1/count with the video in the request"),
     "browser_uploads":     (True,  "API: presigned S3 uploads (/v1/upload-url, /v1/count/s3)"),
     "live_view":           (True,  "Desktop GUI: webcam live view"),
+    "report_download":     (True,  "Web app: download results as JSON / CSV"),
     "session_history":     (True,  "Web app: keep past results in the browser and show progress"),
 }
 
@@ -45,6 +47,7 @@ PARENTS = {
     "auto_stroke_detection": ("stroke_training",),
     "split_step_metrics": ("split_step_counting",),
     "split_step_timing": ("split_step_counting", "stroke_training"),
+    "rally_stats": ("stroke_training",),
 }
 
 _TRUE  = {"1", "true", "on", "yes"}
