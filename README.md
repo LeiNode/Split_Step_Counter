@@ -152,7 +152,8 @@ Status codes:
 | `401` | Bad or missing key |
 | `403` | S3 key not issued by this API, or not readable |
 | `404` | S3 object missing, or the feature is switched off |
-| `413` | File too large |
+| `413` | File too large, or video longer than `MAX_VIDEO_SECONDS` |
+| `429` | Rate limit reached (`RATE_LIMIT_PER_HOUR`) |
 | `422` | Not a readable video, or a bad parameter |
 | `501` | Uploads not configured (`UPLOAD_BUCKET` unset) |
 
@@ -164,6 +165,8 @@ Status codes:
 | `UPLOAD_BUCKET` | unset | S3 bucket for browser uploads. Enables `/v1/upload-url` and locks `/v1/count/s3` to the keys it issues. Without it, the web app uploads directly. |
 | `API_KEY` | unset | If set, `/v1/*` requests must send `X-API-Key: <value>`. Use only for **server-to-server** calls, because a key embedded in website JavaScript is visible to everyone. |
 | `MAX_UPLOAD_MB` | `200` | Upload size limit, for direct uploads and presigned ones. |
+| `MAX_VIDEO_SECONDS` | `600` | Longest video analysed; longer ones get `413`. Keeps each request well inside Lambda's 15-minute limit. |
+| `RATE_LIMIT_PER_HOUR` | `0` (off) | Analyses per client IP per hour; beyond that the API returns `429` with `Retry-After`. Per container, so the effective limit scales with reserved concurrency. |
 | `SPLIT_STEP_FEATURES` | unset | Feature switches, see below. |
 | `SPLIT_STEP_MODELS_DIR` | `<repo>/models` | Where the model files are read from. |
 
@@ -251,6 +254,8 @@ The public URL is protected in four ways:
 - S3 **enforces the size limit**.
 - **Reserved concurrency caps how many videos can be processed at once**, and
   so caps your bill if someone abuses the URL.
+- **Per-IP rate limits** (20 analyses per hour by default) and a **10-minute
+  video cap**.
 
 ### One-command deploy
 
@@ -276,6 +281,8 @@ variables:
 | `NAME` | `split-step-api` |
 | `CONCURRENCY` | `3` |
 | `MAX_UPLOAD_MB` | `200` |
+| `MAX_VIDEO_SECONDS` | `600` |
+| `RATE_LIMIT_PER_HOUR` | `20` |
 | `UPLOAD_BUCKET` | `<name>-uploads-<account>-<region>` |
 
 ### Add it to your website

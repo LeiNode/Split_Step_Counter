@@ -33,6 +33,8 @@ Configuration (environment variables)
     API_KEY          if set, every /v1 request must send header  X-API-Key: <value>.
                      For server-to-server use only — a key in browser JS is public.
     MAX_UPLOAD_MB    size limit for uploads, direct or presigned (default 200)
+    MAX_VIDEO_SECONDS  longest video analysed (default 600 = 10 min; 413 beyond)
+    RATE_LIMIT_PER_HOUR  analyses per client IP per hour (default 0 = unlimited)
     SPLIT_STEP_MODELS_DIR   where the model files live (default <repo>/models)
 
 Run locally:   uvicorn api.main:app --reload
@@ -52,13 +54,17 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from split_step import features
-from split_step.analyze import VideoError, analyze_video
+from split_step.analyze import VideoError, VideoTooLong, analyze_video
+
+from api.limits import rate_limit
 
 ModelName = Literal["lstm", "rules"]
 DrillName = Literal["auto", "forehand", "backhand", "serve"]
 HandName  = Literal["auto", "right", "left"]
 
 MAX_UPLOAD_BYTES = int(float(os.environ.get("MAX_UPLOAD_MB", "200")) * 1024 * 1024)
+# Longest video analysed; keeps one request well inside Lambda's 15 min limit
+MAX_VIDEO_SECONDS = float(os.environ.get("MAX_VIDEO_SECONDS", "600"))
 UPLOAD_PREFIX    = "uploads/"
 UPLOAD_URL_TTL_S = 600
 _CHUNK = 1024 * 1024
@@ -203,7 +209,9 @@ def _s3_client():
 
 def _analyze_file(path: str, opts: AnalysisOptions) -> dict:
     try:
-        return analyze_video(path, **opts.kwargs)
+        return analyze_video(path, **opts.kwargs, max_seconds=MAX_VIDEO_SECONDS or None)
+    except VideoTooLong as e:
+        raise HTTPException(status_code=413, detail=str(e))
     except VideoError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -226,7 +234,8 @@ _COUNT_ROUTE = dict(response_model=CountResult, response_model_exclude_none=True
 
 
 @app.post("/v1/count", **_COUNT_ROUTE,
-          dependencies=[Depends(require_api_key), Depends(require_feature("direct_upload"))])
+          dependencies=[Depends(require_api_key), Depends(require_feature("direct_upload")),
+                        Depends(rate_limit)])
 def count_upload(
     file: UploadFile = File(..., description="Video file (mp4, mov, webm, ...)"),
     opts: AnalysisOptions = Depends(),
@@ -267,7 +276,8 @@ def upload_url(req: UploadRequest) -> dict:
 
 
 @app.post("/v1/count/s3", **_COUNT_ROUTE,
-          dependencies=[Depends(require_api_key), Depends(require_feature("browser_uploads"))])
+          dependencies=[Depends(require_api_key), Depends(require_feature("browser_uploads")),
+                        Depends(rate_limit)])
 def count_s3(video: S3Video, opts: AnalysisOptions = Depends()) -> dict:
     """Analyse a video stored in S3. Preferred on Lambda/API Gateway, whose
     request bodies are capped at a few MB. The service's IAM role needs

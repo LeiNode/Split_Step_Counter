@@ -46,6 +46,10 @@ class VideoError(ValueError):
     """The input can't be opened or decoded as a video."""
 
 
+class VideoTooLong(VideoError):
+    """The video is longer than the max_seconds the caller allows."""
+
+
 def _make_detector(model: str, clock, require_full_pose: bool = True):
     if model == "lstm":
         from .lstm_counter import LSTMCounter  # lazy: only import torch when needed
@@ -61,7 +65,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                   split_step_timing: bool = True, rally_stats: bool = True,
                   include_pose: bool = False, ready_position: bool = True,
                   camera_view_check: bool = True, footwork: bool = True,
-                  coach: bool = True, max_fps: float | None = 30.0) -> dict:
+                  coach: bool = True, max_fps: float | None = 30.0,
+                  max_seconds: float | None = None) -> dict:
     """Analyse a video file.
 
     model              — split-step counter: "lstm" (GUI default) or "rules"
@@ -86,6 +91,9 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                          is thinned to match; it also halves the cost of 60 fps.
                          On a 60 fps match clip, full-rate analysis found 5 extra
                          "swings", 3 of them clearly false (running, ball bouncing).
+    max_seconds        — refuse videos longer than this (VideoTooLong). Checked up
+                         front from the container's metadata and again while
+                         decoding, since some formats (e.g. webm) report no length.
 
     Returns a JSON-serialisable dict. Always present:
         frames, frames_with_pose, duration_ms, fps, processing_s,
@@ -127,6 +135,12 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     if not cap.isOpened():
         raise VideoError("Could not open the file as a video.")
 
+    if max_seconds:
+        n, f = cap.get(cv2.CAP_PROP_FRAME_COUNT), cap.get(cv2.CAP_PROP_FPS)
+        if n > 0 and f > 0 and n / f > max_seconds:
+            cap.release()
+            raise VideoTooLong(f"Video is {n / f / 60:.1f} min long; the limit is {max_seconds / 60:g} min.")
+
     started  = time.perf_counter()
     video_ts = [0.0]  # seconds; the detectors read this as their clock
     detector = (_make_detector(model, clock=lambda: video_ts[0], require_full_pose=require_full_pose)
@@ -148,6 +162,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                     # MediaPipe VIDEO mode rejects non-increasing timestamps
                     # (some containers report duplicates); nudge forward 1 ms.
                     ts_ms = last_ts_ms + 1
+                if max_seconds and ts_ms > max_seconds * 1000:
+                    raise VideoTooLong(f"Video is longer than the {max_seconds / 60:g} min limit.")
                 frames    += 1
                 last_ts_ms = ts_ms
                 if last_used_ms is not None and ts_ms - last_used_ms < min_gap_ms:
