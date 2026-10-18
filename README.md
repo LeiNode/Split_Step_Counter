@@ -14,6 +14,9 @@ analyses run on them:
 - **Stroke training.** Detects swings and gives feedback per stroke:
   - forehand / backhand: contact height, shoulder turn, follow-through, knee load
   - serve: reach, toss height, elbow extension, trophy-position knee bend
+  - a **consistency score** (0–100) per stroke: how repeatable the swings
+    are. Pros score about 55–70 on practice footage, because measurement
+    noise counts toward the spread.
 - **Recovery.** Measures how fast the player gets back to a ready stance
   (knees bent, racket in front with both hands, feet apart) after each shot.
 - **Rallies.** Groups swings into rallies (shots per rally, longest rally).

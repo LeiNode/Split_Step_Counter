@@ -277,8 +277,10 @@
     const st = res.strokes, serve = st.drill === "serve";
     $("stroke-title").textContent = st.drill === "auto" ? "Strokes" : st.drill[0].toUpperCase() + st.drill.slice(1) + " training";
     const counts = Object.entries(st.summary).map(([k, v]) => stat(k[0].toUpperCase() + k.slice(1) + "s", v.count));
+    const scores = Object.entries(st.summary).filter(([, v]) => v.consistency != null)
+      .map(([k, v]) => stat(k[0].toUpperCase() + k.slice(1) + " consistency", v.consistency + "/100"));
     const t = res.timing;
-    $("stroke-stats").replaceChildren(stat("Swings", st.swings.length), stat("Hand", st.hand), ...counts,
+    $("stroke-stats").replaceChildren(stat("Swings", st.swings.length), stat("Hand", st.hand), ...counts, ...scores,
       ...(t && t.shots ? [stat("Split step before shot", `${t.shots_with_split_step} of ${t.shots}`)] : []),
       ...(res.rallies && res.rallies.summary.rallies ? [stat("Rallies", res.rallies.summary.rallies),
                                                          stat("Longest rally", res.rallies.summary.longest + " shots")] : []),

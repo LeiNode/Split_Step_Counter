@@ -108,3 +108,23 @@ def test_live_counter_matches_offline():
     assert c.count == len(detect_swings(t, "right")) == 2
     c.reset()
     assert c.count == 0 and c.hand == "right"
+
+
+def test_consistency_score():
+    from split_step.strokes import consistency
+    same = [{"peak_wrist_speed": 10.0, "contact_height": 0.5, "shoulder_turn_deg": 120.0,
+             "finish_above_shoulder_m": 0.2} for _ in range(4)]
+    assert consistency("forehand", same) == 100
+    wild = [{"peak_wrist_speed": v, "contact_height": c, "shoulder_turn_deg": t, "finish_above_shoulder_m": f}
+            for v, c, t, f in [(5, 0.0, 40, -0.3), (15, 1.2, 170, 0.5), (6, 0.1, 60, -0.2), (16, 1.1, 160, 0.4)]]
+    assert consistency("forehand", wild) < 20
+    assert consistency("forehand", same[:2]) is None          # too few swings
+
+
+def test_shoulder_turn_ignores_left_right_swaps():
+    """A 180° flip of the shoulder line (MediaPipe swapping L/R) is not rotation."""
+    from split_step.strokes import swing_metrics
+    w = _body(60)
+    w[30:32, LEFT_SHOULDER, 0], w[30:32, RIGHT_SHOULDER, 0] = 0.2, -0.2   # 2-frame label swap
+    m = swing_metrics(_track(w), 30, "forehand", "right", 10.0)
+    assert m["shoulder_turn_deg"] < 1

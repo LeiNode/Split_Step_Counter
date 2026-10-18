@@ -57,7 +57,20 @@ TIP_CONTACT_LOW     = 0.10  # contact height below this (0 = hips, 1 = shoulders
 TIP_CONTACT_HIGH    = 1.10
 TIP_SHOULDER_TURN   = 35    # degrees of shoulder rotation through the stroke
 TIP_GROUND_KNEE     = 160   # deepest knee angle while loading
-TIP_SPEED_CV        = 0.30  # swing-speed coefficient of variation
+TIP_CONSISTENCY     = 50    # consistency score below this -> tip
+
+# Shot-to-shot spread (std) at which a metric scores 0 for consistency. Speed is
+# relative (std / mean); the rest are absolute, in each metric's own unit.
+# Set so pro practice footage lands around 55-75: measurement noise from
+# MediaPipe (shoulder turn especially, which depends on its depth estimate)
+# is part of the spread, so a "perfect" 100 isn't reachable.
+CONSISTENCY_TOLERANCE = {
+    "groundstroke": {"peak_wrist_speed": 0.35, "contact_height": 0.35,
+                     "shoulder_turn_deg": 50.0, "finish_above_shoulder_m": 0.25},
+    "serve": {"peak_wrist_speed": 0.35, "contact_reach_m": 0.15,
+              "toss_height_m": 0.20, "elbow_extension": 15.0},
+}
+CONSISTENCY_MIN_SWINGS = 3
 TIP_SERVE_ELBOW     = 150   # elbow angle at contact
 TIP_TROPHY_KNEE     = 155   # deepest knee bend before a serve
 TIP_TOSS_HEIGHT     = 0.25  # m above nose
@@ -224,8 +237,12 @@ def swing_metrics(track: PoseTrack, i: int, stroke: str, hand: str, speed: float
             headings.append(np.arctan2(d[1], d[0]))
     turn = None
     if len(headings) >= 3:
-        h = np.degrees(np.unwrap(headings))
-        turn = round(float(h.max() - h.min()), 1)
+        # The shoulder line is an axis, not a direction: when MediaPipe briefly
+        # swaps left/right shoulders the heading jumps 180° and a plain unwrap
+        # would count that as rotation (it produced "287°" on real footage).
+        # Unwrapping the doubled angle makes headings 180° apart identical.
+        h = np.degrees(np.unwrap(2 * np.array(headings)) / 2)
+        turn = round(float(min(h.max() - h.min(), 180.0)), 1)
 
     # Follow-through: how far above the shoulders the hitting wrist finishes
     finish = _nanmax([float(track.world[k, shoulder, 1] - track.world[k, wrist, 1])
@@ -242,6 +259,21 @@ def swing_metrics(track: PoseTrack, i: int, stroke: str, hand: str, speed: float
 def _median(swings, key):
     vals = [s[key] for s in swings if s.get(key) is not None]
     return float(np.median(vals)) if vals else None
+
+
+def consistency(stroke: str, swings: list[dict]) -> int | None:
+    """0-100: how repeatable the swings are. Each metric scores
+    1 - spread / tolerance (floored at 0); the score is their mean x 100.
+    None with fewer than CONSISTENCY_MIN_SWINGS swings."""
+    tol = CONSISTENCY_TOLERANCE["serve" if stroke == "serve" else "groundstroke"]
+    scores = []
+    for key, limit in tol.items():
+        vals = np.array([s[key] for s in swings if s.get(key) is not None], float)
+        if len(vals) < CONSISTENCY_MIN_SWINGS:
+            continue
+        spread = vals.std() / vals.mean() if key == "peak_wrist_speed" and vals.mean() > 0 else vals.std()
+        scores.append(max(0.0, 1.0 - spread / limit))
+    return round(100 * float(np.mean(scores))) if scores else None
 
 
 def _summary(swings) -> dict:
@@ -262,9 +294,10 @@ def stroke_tips(stroke: str, swings: list[dict]) -> list[str]:
         return []
     name = stroke.capitalize()
     tips = []
-    speeds = np.array([s["peak_wrist_speed"] for s in swings], float)
-    if len(speeds) >= 4 and speeds.std() / speeds.mean() > TIP_SPEED_CV:
-        tips.append(f"{name}: swing speed varies a lot between shots. Aim for a repeatable rhythm.")
+    score = consistency(stroke, swings)
+    if score is not None and score < TIP_CONSISTENCY:
+        tips.append(f"{name}: your swing changes a lot from shot to shot (consistency {score}/100). "
+                    "Slow down and groove one repeatable motion before adding pace.")
     if stroke == "serve":
         e, k, t = (_median(swings, x) for x in ("elbow_extension", "trophy_knee_angle", "toss_height_m"))
         if e is not None and e < TIP_SERVE_ELBOW:
@@ -321,6 +354,9 @@ def stroke_report(track: PoseTrack, drill: str = "auto", hand: str = "auto") -> 
 
     by_type = {st: [s for s in swings if s["stroke"] == st] for st in STROKES + ("unknown",)}
     summary = {st: _summary(v) for st, v in by_type.items() if v}
+    for st, v in summary.items():
+        if st in STROKES:
+            v["consistency"] = consistency(st, by_type[st])
     tips = [tip for st in STROKES for tip in stroke_tips(st, by_type[st])]
     if not swings:
         tips.append("No swings detected. Make sure the hitting arm stays in frame.")
