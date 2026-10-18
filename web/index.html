@@ -133,6 +133,14 @@
 
   <section class="card notice" id="camera-notice" hidden></section>
 
+  <section class="card" id="coach" data-feature="coach_summary" hidden>
+    <h2>Coach's summary</h2>
+    <p class="status" id="coach-focus-title">Work on these first:</p>
+    <ol id="coach-focus"></ol>
+    <p class="status" id="coach-strengths-title">Going well:</p>
+    <ul class="tips" id="coach-strengths"></ul>
+  </section>
+
   <section class="card" id="goal-results" data-feature="drill_goals" hidden>
     <h2>Goals</h2>
     <ul class="goal-list" id="goal-list"></ul>
@@ -414,6 +422,19 @@
     }));
   }
 
+  // ── Coach's summary ──────────────────────────────────────────────────────
+  function renderCoach(c) {
+    const box = $("coach");
+    if (!box) return;
+    box.hidden = !c || (!c.focus.length && !c.strengths.length);
+    if (box.hidden) return;
+    const li = (t) => { const e = document.createElement("li"); e.textContent = t; return e; };
+    $("coach-focus").replaceChildren(...c.focus.map(li), ...(c.more ? [li(`…and ${c.more} more tip${c.more > 1 ? "s" : ""} below.`)] : []));
+    $("coach-strengths").replaceChildren(...c.strengths.map(li));
+    $("coach-focus-title").hidden = !c.focus.length;
+    $("coach-strengths-title").hidden = !c.strengths.length;
+  }
+
   // ── Drill goals (this browser only) ──────────────────────────────────────
   // [key, label, "min" | "max", unit, value(res) -> number | null]
   const GOALS = [
@@ -668,6 +689,7 @@
       const res = await analyse(file);
       status(`Done in ${res.processing_s}s · ${res.frames} frames`);
       renderGoals(res);
+      renderCoach(res.coach);
       const camTips = (res.camera && res.camera.tips) || [];
       $("camera-notice").textContent = camTips.join(" ");
       $("camera-notice").hidden = !camTips.length;

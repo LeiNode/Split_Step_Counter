@@ -28,7 +28,8 @@ analyses run on them:
 - **Camera-angle check.** Detects whether the player is filmed from
   behind, the front or the side, and warns when the split-step model is less
   reliable for that view.
-- **Coaching tips** in plain language, based on the metrics above.
+- **Coaching tips** in plain language, based on the metrics above, with a
+  **coach's summary** of the top 3 things to work on.
 
 Use it four ways:
 - the **Tennis Trainer web app**
@@ -184,6 +185,7 @@ everywhere:
 |---|---|
 | `split_step_counting` | Split-step counting (parent of `split_step_metrics`) |
 | `split_step_metrics` | Per-split-step quality metrics and session summary |
+| `coach_summary` | Prioritised summary: the top 3 things to work on, plus strengths |
 | `footwork` | Step counting: steps per minute, adjustment steps between shots |
 | `camera_view_check` | Detect the camera angle; warn when it's one the model handles poorly |
 | `stroke_training` | All stroke training (parent of the four below) |

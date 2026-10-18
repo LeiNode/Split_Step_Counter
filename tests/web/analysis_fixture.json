@@ -380,9 +380,21 @@
     "median_steps_between_shots": 4.0,
     "tips": []
   },
+  "coach": {
+    "focus": [
+      "Most of this video shows the player from the side. The split-step model was trained mainly on footage filmed from behind the player, so split-step counts may be less reliable here. For best results, film from behind the baseline.",
+      "Only 2 of 8 shots had a split step before them. Make it a habit: a small hop as your opponent hits, then move."
+    ],
+    "strengths": [
+      "Solid split steps: good knee bend, base width and rhythm.",
+      "Forehand: technique metrics look solid. Keep it up!",
+      "Backhand: technique metrics look solid. Keep it up!"
+    ],
+    "more": 0
+  },
   "frames": 572,
   "frames_with_pose": 572,
   "duration_ms": 19033.3,
   "fps": 30.0,
-  "processing_s": 8.385
+  "processing_s": 8.332
 }

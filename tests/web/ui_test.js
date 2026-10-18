@@ -33,7 +33,7 @@ async function load(flags, { uploadsConfigured = false } = {}) {
   return { dom, doc: dom.window.document, calls };
 }
 
-const ALL = { drill_goals: true, pose_overlay: true, report_download: true, rally_stats: true, session_history: true, split_step_timing: true, split_step_counting: true, split_step_metrics: true, stroke_training: true,
+const ALL = { coach_summary: true, drill_goals: true, pose_overlay: true, report_download: true, rally_stats: true, session_history: true, split_step_timing: true, split_step_counting: true, split_step_metrics: true, stroke_training: true,
   forehand_training: true, backhand_training: true, serve_training: true, auto_stroke_detection: true,
   lstm_model: true, rules_model: true, direct_upload: true, browser_uploads: true, live_view: true };
 
@@ -71,6 +71,8 @@ function chooseFile(dom) {
   check(/✓ Met · Split steps per minute/.test(goalText), "split-step goal met");
   setGoal("rally", ""); setGoal("with_split", ""); setGoal("split_rate", "");
   check(Object.keys(JSON.parse(dom.window.localStorage.getItem("tennis-trainer-goals-v1"))).length === 0, "clearing a box removes the goal");
+  check(!doc.getElementById("coach").hidden && doc.querySelectorAll("#coach-focus li").length >= 1, "coach's summary shown");
+  check(doc.getElementById("coach-focus").textContent.includes("film from behind"), "camera tip prioritised first");
   check(!doc.getElementById("split-results").hidden, "split-step results shown");
   check(!doc.getElementById("camera-notice").hidden && doc.getElementById("camera-notice").textContent.includes("film from behind"),
         "camera-angle warning shown");
@@ -150,6 +152,9 @@ function chooseFile(dom) {
   check(modes().join() === "split,forehand,backhand", "disabled modes removed: " + modes());
   ({ dom, doc, calls } = await load({ ...ALL, session_history: false, report_download: false, pose_overlay: false, drill_goals: false }));
   check(!doc.getElementById("goal-settings") && !doc.getElementById("goal-results"), "goals removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, coach_summary: false }));
+  check(!doc.getElementById("coach"), "coach summary removed when switched off");
+  ({ dom, doc, calls } = await load({ ...ALL, session_history: false, report_download: false, pose_overlay: false, drill_goals: false }));
   check(!doc.getElementById("history"), "history section removed when switched off");
   check(!doc.getElementById("overlay") && !doc.getElementById("show-skeleton"), "overlay removed when switched off");
   chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
