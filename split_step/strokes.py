@@ -68,12 +68,13 @@ CONSISTENCY_TOLERANCE = {
     "groundstroke": {"peak_wrist_speed": 0.35, "contact_height": 0.35,
                      "shoulder_turn_deg": 50.0, "finish_above_shoulder_m": 0.25},
     "serve": {"peak_wrist_speed": 0.35, "contact_reach_m": 0.15,
-              "toss_height_m": 0.20, "elbow_extension": 15.0},
+              "toss_height_m": 0.20, "toss_lateral_m": 0.20, "elbow_extension": 15.0},
 }
 CONSISTENCY_MIN_SWINGS = 3
 TIP_SERVE_ELBOW     = 150   # elbow angle at contact
 TIP_TROPHY_KNEE     = 155   # deepest knee bend before a serve
 TIP_TOSS_HEIGHT     = 0.25  # m above nose
+TIP_TOSS_SPREAD     = 0.15  # m, shot-to-shot std of the toss's sideways position
 
 
 def _arm(hand: str):
@@ -209,12 +210,22 @@ def swing_metrics(track: PoseTrack, i: int, stroke: str, hand: str, speed: float
 
     if stroke == "serve":
         reach = _nanmax([_height_above_nose(track, k, wrist) for k in _frames(track, t, -300, 100)])
-        toss = _nanmax([_height_above_nose(track, k, other) for k in _frames(track, t, -1500, 0)])
+        toss_frames = _frames(track, t, -1500, 0)
+        toss_heights = [_height_above_nose(track, k, other) for k in toss_frames]
+        toss = _nanmax(toss_heights)
+        # Where the toss hand peaks (≈ release point), sideways along the shoulder
+        # line (+ = hitting-arm side). It's the hand, not the ball: pros measured
+        # about -0.35 m (out on the toss-arm side). What matters is that it repeats.
+        toss_lateral = np.nan
+        if np.isfinite(toss):
+            peak_k = toss_frames[int(np.nanargmax(np.where(np.isfinite(toss_heights), toss_heights, -np.inf)))]
+            toss_lateral = _lateral(track, peak_k, other, hand)
         elbows = [_angle(*(track.world[k, j, :3] for j in (shoulder, elbow, wrist)))
                   for k in _frames(track, t, -300, 100) if track.visible(k, (shoulder, elbow, wrist))]
         m.update({
             "contact_reach_m": None if not np.isfinite(reach) else round(reach, 2),
             "toss_height_m": None if not np.isfinite(toss) else round(toss, 2),
+            "toss_lateral_m": None if not np.isfinite(toss_lateral) else round(toss_lateral, 2),
             "elbow_extension": round(max(elbows), 1) if elbows else None,
             "trophy_knee_angle": load_knee,
         })
@@ -306,6 +317,10 @@ def stroke_tips(stroke: str, swings: list[dict]) -> list[str]:
             tips.append("Serve: bend your knees more in the trophy position to drive up into the ball.")
         if t is not None and t < TIP_TOSS_HEIGHT:
             tips.append("Serve: toss a little higher so you can hit at full extension.")
+        lat = [x["toss_lateral_m"] for x in swings if x.get("toss_lateral_m") is not None]
+        if len(lat) >= CONSISTENCY_MIN_SWINGS and np.std(lat) > TIP_TOSS_SPREAD:
+            tips.append(f"Serve: your toss release point moves around (±{np.std(lat) * 100:.0f} cm sideways). "
+                        "Release the ball from the same spot every time for a repeatable toss.")
     else:
         c, turn, f, k = (_median(swings, x) for x in
                          ("contact_height", "shoulder_turn_deg", "finish_above_shoulder_m", "load_knee_angle"))

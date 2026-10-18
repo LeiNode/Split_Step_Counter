@@ -128,3 +128,15 @@ def test_shoulder_turn_ignores_left_right_swaps():
     w[30:32, LEFT_SHOULDER, 0], w[30:32, RIGHT_SHOULDER, 0] = 0.2, -0.2   # 2-frame label swap
     m = swing_metrics(_track(w), 30, "forehand", "right", 10.0)
     assert m["shoulder_turn_deg"] < 1
+
+
+def test_serve_toss_lateral_and_tip():
+    from split_step.strokes import stroke_tips
+    w = _body(90)
+    w[20:45, LEFT_WRIST, 1] = -1.2
+    w[20:45, LEFT_WRIST, 0] = -0.4                        # toss out on the non-hitting side
+    _groundstroke(w, 45, start_x=0.6, end_x=-0.5)
+    s = stroke_report(_track(w), "serve", "right")["swings"][0]
+    assert s["toss_lateral_m"] < -0.3
+    wobbly = [{"peak_wrist_speed": 10.0, "toss_lateral_m": x} for x in (-0.3, 0.0, 0.3, -0.25)]
+    assert any("toss release point moves around" in t for t in stroke_tips("serve", wobbly))
