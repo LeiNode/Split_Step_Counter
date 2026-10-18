@@ -19,6 +19,7 @@ from PIL import Image, ImageTk
 
 from .detector import (CANVAS_W, CANVAS_H, GROUNDED, AIRBORNE, LEFT_LEG_UP,
                        RIGHT_LEG_UP, NOT_TRACKED)
+from . import features
 from .live_view_analysis import LiveViewAnalysis
 from .video_analysis import VideoAnalysis
 
@@ -55,7 +56,9 @@ class App:
         self._worker: threading.Thread | None = None
         self._photo:  ImageTk.PhotoImage | None = None
         self._video_path: str | None          = None
-        self._use_lstm: tk.BooleanVar         = tk.BooleanVar(value=True)
+        self._flags = features.all_features()
+        # With only one model enabled, use it and hide the toggle
+        self._use_lstm: tk.BooleanVar         = tk.BooleanVar(value=self._flags["lstm_model"])
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -85,19 +88,22 @@ class App:
                                          self.ACCENT, self.PURPLE, state=tk.DISABLED)
         self._btn_process.pack(fill=tk.X, pady=(0, 4))
 
-        tk.Checkbutton(ctrl, text="Use LSTM model",
-                       variable=self._use_lstm,
-                       bg=self.BG, fg=self.FG_DIM,
-                       selectcolor=self.BG2,
-                       activebackground=self.BG,
-                       activeforeground=self.FG,
-                       font=("Helvetica", 9)).pack(anchor=tk.W, pady=(0, 4))
+        if self._flags["lstm_model"] and self._flags["rules_model"]:
+            tk.Checkbutton(ctrl, text="Use LSTM model",
+                           variable=self._use_lstm,
+                           bg=self.BG, fg=self.FG_DIM,
+                           selectcolor=self.BG2,
+                           activebackground=self.BG,
+                           activeforeground=self.FG,
+                           font=("Helvetica", 9)).pack(anchor=tk.W, pady=(0, 4))
 
         ttk.Separator(ctrl, orient="horizontal").pack(fill=tk.X, pady=16)
 
+        # Created even when switched off (other code toggles its state), just never shown
         self._btn_live = self._button(ctrl, "Start Live View", self._start_live,
                                       self.PURPLE, self.ACCENT)
-        self._btn_live.pack(fill=tk.X, pady=(0, 4))
+        if self._flags["live_view"]:
+            self._btn_live.pack(fill=tk.X, pady=(0, 4))
 
         self._btn_stop = self._button(ctrl, "Stop", self._request_stop,
                                       self.RED, "#ef5350", state=tk.DISABLED)

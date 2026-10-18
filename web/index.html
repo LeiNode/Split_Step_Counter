@@ -1,0 +1,287 @@
+<!doctype html>
+<!--
+  Tennis Trainer: browser client for the Split Step Counter API.
+
+  Local:  uvicorn api.main:app --port 8000, then open http://localhost:8000/app/
+          (served by the API itself, so API_URL can stay empty).
+  Hosted: copy this file to your site, set API_URL to your Lambda Function URL,
+          and list your site's origin in the API's ALLOWED_ORIGINS.
+
+  Every element with data-feature="<name>" is removed when GET /v1/features
+  reports that feature switched off.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tennis Trainer</title>
+  <style>
+    :root { --bg:#f6f7f4; --card:#fff; --ink:#1d2421; --dim:#5f6b66; --line:#dde2de; --accent:#2f7d4f; --warn:#b5651d; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#141816; --card:#1d2320; --ink:#e6ebe8; --dim:#9aa6a0; --line:#2e3632; --accent:#5cc488; --warn:#e3a35b; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, sans-serif; }
+    main { max-width: 56rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    h1 { margin: 0 0 .25rem; font-size: 1.6rem; }
+    h2 { font-size: 1.1rem; margin: 0 0 .75rem; }
+    .sub { color: var(--dim); margin: 0 0 1.25rem; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+    .modes { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; }
+    .modes label { border: 1px solid var(--line); border-radius: 999px; padding: .35rem .85rem; cursor: pointer; }
+    .modes input { margin-right: .35rem; }
+    .row { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; align-items: center; }
+    button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: .6rem 1.2rem; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    select, input[type=file] { font: inherit; color: inherit; }
+    video { width: 100%; max-height: 24rem; background: #000; border-radius: 8px; margin-top: .75rem; }
+    .big { font-size: 2.6rem; font-weight: 700; line-height: 1; }
+    .stats { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-bottom: .75rem; }
+    .stats div span { display: block; color: var(--dim); font-size: .8rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
+    th { color: var(--dim); font-weight: 500; }
+    .table-wrap { overflow-x: auto; }
+    a.ts { color: var(--accent); cursor: pointer; text-decoration: underline; }
+    ul.tips { margin: .5rem 0 0; padding-left: 1.2rem; }
+    ul.tips li { margin: .2rem 0; }
+    .status { color: var(--dim); min-height: 1.5em; }
+    .error { color: var(--warn); }
+    .tag { font-size: .75rem; padding: .05rem .4rem; border-radius: 4px; border: 1px solid var(--line); color: var(--dim); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Tennis Trainer</h1>
+  <p class="sub">Upload a clip. Get split-step counts, stroke metrics and coaching tips.</p>
+
+  <section class="card">
+    <h2>1. What are you practising?</h2>
+    <div class="modes" id="modes">
+      <label data-feature="split_step_counting"><input type="radio" name="mode" value="split" checked>Split steps</label>
+      <label data-feature="forehand_training"><input type="radio" name="mode" value="forehand">Forehand</label>
+      <label data-feature="backhand_training"><input type="radio" name="mode" value="backhand">Backhand</label>
+      <label data-feature="serve_training"><input type="radio" name="mode" value="serve">Serve</label>
+      <label data-feature="auto_stroke_detection"><input type="radio" name="mode" value="auto">Match play (auto) <span class="tag">beta</span></label>
+    </div>
+    <div class="row">
+      <label data-feature="stroke_training">Hitting hand
+        <select id="hand"><option value="auto">Detect</option><option value="right">Right</option><option value="left">Left</option></select>
+      </label>
+      <label id="model-picker">Split-step model
+        <select id="model">
+          <option value="lstm" data-feature="lstm_model">LSTM</option>
+          <option value="rules" data-feature="rules_model">Rule-based</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2. Upload your video</h2>
+    <div class="row">
+      <input type="file" id="video" accept="video/*">
+      <button id="go" disabled>Analyse</button>
+    </div>
+    <p class="status" id="status"></p>
+    <video id="player" controls playsinline hidden></video>
+  </section>
+
+  <section class="card" id="split-results" hidden>
+    <h2>Split steps</h2>
+    <div class="stats" id="split-stats"></div>
+    <div class="table-wrap"><table id="split-table"></table></div>
+    <ul class="tips" id="split-tips"></ul>
+  </section>
+
+  <section class="card" id="stroke-results" hidden>
+    <h2 id="stroke-title">Strokes</h2>
+    <div class="stats" id="stroke-stats"></div>
+    <div class="table-wrap"><table id="stroke-table"></table></div>
+    <ul class="tips" id="stroke-tips"></ul>
+  </section>
+</main>
+
+<script>
+  // Empty = same origin (page served by the API at /app/). Otherwise e.g.
+  // "https://abc123.lambda-url.us-east-1.on.aws" (no trailing slash).
+  const API_URL = "";
+
+  const $ = (id) => document.getElementById(id);
+  let FLAGS = {};
+
+  // ── Feature switches ─────────────────────────────────────────────────────
+  async function loadFeatures() {
+    try {
+      const r = await fetch(API_URL + "/v1/features");
+      FLAGS = (await r.json()).features || {};
+    } catch { FLAGS = {}; }  // unreachable API: show everything, errors surface on submit
+    document.querySelectorAll("[data-feature]").forEach((el) => {
+      if (FLAGS[el.dataset.feature] === false) el.remove();
+    });
+    const first = document.querySelector('input[name="mode"]');
+    if (first) first.checked = true;
+    if (!document.querySelector('#model option')) $("model-picker").remove();
+    if (!first) $("status").textContent = "All analysis features are switched off on this server.";
+    updateControls();
+  }
+
+  function mode() { return document.querySelector('input[name="mode"]:checked')?.value; }
+
+  function updateControls() {
+    const m = mode();
+    const picker = $("model-picker");
+    // The split-step model only matters when split steps are counted
+    if (picker) picker.hidden = FLAGS.split_step_counting === false;
+    $("go").disabled = !m || !$("video").files[0];
+  }
+  document.addEventListener("change", updateControls);
+
+  // ── API calls ────────────────────────────────────────────────────────────
+  async function post(path, body, isJson = true) {
+    const r = await fetch(API_URL + path, isJson
+      ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      : { method: "POST", body });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : `Request failed (${r.status})`);
+    return data;
+  }
+
+  function queryString() {
+    const m = mode(), q = new URLSearchParams();
+    if ($("model")) q.set("model", $("model").value);
+    if (m !== "split") q.set("drill", m);
+    if ($("hand") && m !== "split") q.set("hand", $("hand").value);
+    return q.toString();
+  }
+
+  async function analyse(file) {
+    const qs = queryString();
+    if (FLAGS.browser_uploads !== false) {
+      try {
+        const ticket = await post("/v1/upload-url", { filename: file.name });
+        if (file.size > ticket.max_bytes) throw new Error(`Video too large (max ${Math.round(ticket.max_bytes / 1048576)} MB).`);
+        status("Uploading…");
+        const form = new FormData();
+        Object.entries(ticket.fields).forEach(([k, v]) => form.append(k, v));
+        form.append("file", file);
+        const up = await fetch(ticket.url, { method: "POST", body: form });
+        if (!up.ok) throw new Error(`Upload failed (${up.status})`);
+        status("Analysing… (the first request after a while can take ~20 s)");
+        return await post(`/v1/count/s3?${qs}`, { bucket: ticket.bucket, key: ticket.key });
+      } catch (e) {
+        // 501 = server has no upload bucket (e.g. running locally): fall back to direct upload
+        if (!/not configured/.test(e.message) || FLAGS.direct_upload === false) throw e;
+      }
+    }
+    status("Uploading and analysing…");
+    const form = new FormData();
+    form.append("file", file);
+    return post(`/v1/count?${qs}`, form, false);
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────────────
+  function status(text, isError = false) {
+    $("status").textContent = text;
+    $("status").className = "status" + (isError ? " error" : "");
+  }
+  const fmt = (v, digits = 2, unit = "") => (v === null || v === undefined) ? "–" : `${(+v).toFixed(digits)}${unit}`;
+  const sec = (ms) => (ms / 1000).toFixed(2) + " s";
+
+  function seekLink(ms) {
+    const a = document.createElement("a");
+    a.className = "ts"; a.textContent = sec(ms);
+    a.onclick = () => { const p = $("player"); p.currentTime = Math.max(0, ms / 1000 - 1); p.play(); };
+    return a;
+  }
+
+  function stat(label, value) {
+    const d = document.createElement("div");
+    d.innerHTML = "<span></span><b></b>";
+    d.querySelector("span").textContent = label;
+    d.querySelector("b").textContent = value;
+    return d;
+  }
+
+  function fillTable(table, columns, rows) {
+    table.replaceChildren();
+    const head = table.insertRow();
+    columns.forEach(([title]) => { const th = document.createElement("th"); th.textContent = title; head.appendChild(th); });
+    rows.forEach((row) => {
+      const tr = table.insertRow();
+      columns.forEach(([, render]) => {
+        const td = tr.insertCell(), v = render(row);
+        v instanceof Node ? td.appendChild(v) : (td.textContent = v);
+      });
+    });
+  }
+
+  function fillTips(ul, tips) {
+    ul.replaceChildren(...(tips || []).map((t) => { const li = document.createElement("li"); li.textContent = t; return li; }));
+  }
+
+  function renderSplit(res) {
+    const box = $("split-results");
+    box.hidden = res.count === undefined;
+    if (box.hidden) return;
+    const s = res.session || {};
+    $("split-stats").replaceChildren(
+      stat("Split steps", res.count),
+      ...(s.split_steps_per_minute !== undefined ? [stat("Per minute", fmt(s.split_steps_per_minute, 1))] : []),
+      ...(s.interval_s ? [stat("Typical gap", fmt(s.interval_s.median, 1, " s"))] : []),
+      ...(s.landing_knee_angle ? [stat("Landing knee bend", fmt(s.landing_knee_angle.median, 0, "°"))] : []),
+    );
+    const cols = [["Time", (e) => seekLink(e.timestamp_ms)]];
+    if (res.session) cols.push(
+      ["Hop height", (e) => fmt(e.hop_height)],
+      ["Knee angle", (e) => fmt(e.landing_knee_angle, 0, "°")],
+      ["Stance (× shoulders)", (e) => fmt(e.landing_stance_ratio)]);
+    fillTable($("split-table"), cols, res.events);
+    fillTips($("split-tips"), s.tips);
+  }
+
+  function renderStrokes(res) {
+    const box = $("stroke-results");
+    box.hidden = !res.strokes;
+    if (box.hidden) return;
+    const st = res.strokes, serve = st.drill === "serve";
+    $("stroke-title").textContent = st.drill === "auto" ? "Strokes" : st.drill[0].toUpperCase() + st.drill.slice(1) + " training";
+    const counts = Object.entries(st.summary).map(([k, v]) => stat(k[0].toUpperCase() + k.slice(1) + "s", v.count));
+    $("stroke-stats").replaceChildren(stat("Swings", st.swings.length), stat("Hand", st.hand), ...counts);
+    const cols = [["Time", (s) => seekLink(s.timestamp_ms)], ["Stroke", (s) => s.stroke], ["Wrist speed", (s) => fmt(s.peak_wrist_speed, 1, " m/s")]];
+    if (serve) cols.push(["Reach", (s) => fmt(s.contact_reach_m, 2, " m")], ["Toss", (s) => fmt(s.toss_height_m, 2, " m")],
+                         ["Elbow", (s) => fmt(s.elbow_extension, 0, "°")], ["Trophy knee", (s) => fmt(s.trophy_knee_angle, 0, "°")]);
+    else cols.push(["Contact height", (s) => fmt(s.contact_height)], ["Shoulder turn", (s) => fmt(s.shoulder_turn_deg, 0, "°")],
+                   ["Finish", (s) => fmt(s.finish_above_shoulder_m, 2, " m")], ["Knee load", (s) => fmt(s.load_knee_angle, 0, "°")]);
+    fillTable($("stroke-table"), cols, st.swings);
+    fillTips($("stroke-tips"), st.tips);
+  }
+
+  // ── Wiring ───────────────────────────────────────────────────────────────
+  $("video").addEventListener("change", () => {
+    const f = $("video").files[0], p = $("player");
+    if (f) { p.src = URL.createObjectURL(f); p.hidden = false; }
+    updateControls();
+  });
+
+  $("go").addEventListener("click", async () => {
+    const file = $("video").files[0];
+    $("go").disabled = true;
+    $("split-results").hidden = $("stroke-results").hidden = true;
+    try {
+      const res = await analyse(file);
+      status(`Done in ${res.processing_s}s · ${res.frames} frames`);
+      renderSplit(res);
+      renderStrokes(res);
+    } catch (e) {
+      status("Error: " + e.message, true);
+    } finally {
+      updateControls();
+    }
+  });
+
+  loadFeatures();
+</script>
+</body>
+</html>

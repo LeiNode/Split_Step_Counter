@@ -147,3 +147,8 @@ def test_upload_url_issues_presigned_post(fake_aws):
 def test_count_s3_locked_to_issued_keys(fake_aws, bucket, key):
     r = client.post("/v1/count/s3", json={"bucket": bucket, "key": key})
     assert r.status_code == 403
+
+
+def test_web_app_served():
+    r = client.get("/app/")
+    assert r.status_code == 200 and "Tennis Trainer" in r.text

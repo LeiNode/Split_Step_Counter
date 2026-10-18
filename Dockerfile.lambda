@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 
 COPY split_step ${LAMBDA_TASK_ROOT}/split_step
 COPY api        ${LAMBDA_TASK_ROOT}/api
+COPY web        ${LAMBDA_TASK_ROOT}/web
 COPY models     ${LAMBDA_TASK_ROOT}/models
 
 ENV SPLIT_STEP_MODELS_DIR=${LAMBDA_TASK_ROOT}/models \

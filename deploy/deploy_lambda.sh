@@ -105,4 +105,5 @@ URL="$(aws lambda get-function-url-config --function-name "$NAME" --query Functi
 echo
 echo "==> Deployed: ${URL}"
 echo "    Test:  curl ${URL}health"
-echo "    Put ${URL%/} into API_URL in web/example.html."
+echo "    Web app: ${URL}app/"
+echo "    To embed on your own site, put ${URL%/} into API_URL in web/index.html."

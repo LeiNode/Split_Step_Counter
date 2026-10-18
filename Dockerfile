@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 
 COPY split_step split_step
 COPY api api
+COPY web web
 COPY models models
 
 ENV PYTHONUNBUFFERED=1 \
