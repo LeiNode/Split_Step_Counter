@@ -39,6 +39,7 @@ DEFAULTS: dict[str, tuple[bool, str]] = {
     "live_view":           (True,  "Desktop GUI: webcam live view"),
     "pose_overlay":        (True,  "Web app: draw the detected skeleton over the video (API: include_pose)"),
     "report_download":     (True,  "Web app: download results as JSON / CSV"),
+    "drill_goals":         (True,  "Web app: set targets and see which ones each session met"),
     "session_history":     (True,  "Web app: keep past results in the browser and show progress"),
 }
 

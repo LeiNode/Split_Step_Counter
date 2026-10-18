@@ -58,6 +58,11 @@
     .k-serve { background: #d9822b; } .k-unknown { background: #8a948f; }
     .linkish { background: none; color: var(--dim); border: 1px solid var(--line); padding: .3rem .7rem; font-weight: 400; }
     .notice { border-color: var(--warn); color: var(--warn); }
+    .goals-form { display: grid; grid-template-columns: 1fr auto; gap: .35rem 1rem; align-items: center; margin-top: .5rem; }
+    .goals-form input { width: 5.5rem; font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: .2rem .4rem; }
+    ul.goal-list { list-style: none; padding: 0; margin: 0; }
+    ul.goal-list li { padding: .3rem 0; border-bottom: 1px solid var(--line); }
+    .met { color: var(--accent); font-weight: 600; } .unmet { color: var(--warn); font-weight: 600; }
     .chart-wrap { position: relative; margin: .5rem 0 1rem; }
     .chart-wrap svg { display: block; width: 100%; height: auto; aspect-ratio: 600 / 220; overflow: visible; }
     .chart-wrap .grid { stroke: var(--line); stroke-width: 1; }
@@ -90,6 +95,11 @@
       <label data-feature="stroke_training">Hitting hand
         <select id="hand"><option value="auto">Detect</option><option value="right">Right</option><option value="left">Left</option></select>
       </label>
+      <details data-feature="drill_goals" id="goal-settings">
+        <summary>Goals</summary>
+        <p class="status">Leave a box empty to skip that goal. Saved in this browser.</p>
+        <div class="goals-form" id="goals-form"></div>
+      </details>
       <label id="model-picker">Split-step model
         <select id="model">
           <option value="lstm" data-feature="lstm_model">LSTM</option>
@@ -122,6 +132,11 @@
   </section>
 
   <section class="card notice" id="camera-notice" hidden></section>
+
+  <section class="card" id="goal-results" data-feature="drill_goals" hidden>
+    <h2>Goals</h2>
+    <ul class="goal-list" id="goal-list"></ul>
+  </section>
 
   <section class="card" id="split-results" hidden>
     <h2>Split steps</h2>
@@ -396,6 +411,68 @@
     }));
   }
 
+  // ── Drill goals (this browser only) ──────────────────────────────────────
+  // [key, label, "min" | "max", unit, value(res) -> number | null]
+  const GOALS = [
+    ["split_rate", "Split steps per minute, at least", "min", "", (r) => r.session ? r.session.split_steps_per_minute : null],
+    ["knee", "Landing knee angle, at most (deeper bend)", "max", "°", (r) => r.session && r.session.landing_knee_angle ? r.session.landing_knee_angle.median : null],
+    ["with_split", "Shots with a split step before them, at least", "min", "%", (r) => r.timing && r.timing.shots ? r.timing.fraction_with_split_step * 100 : null],
+    ["consistency", "Stroke consistency, at least", "min", "/100", (r) => {
+      const v = r.strokes ? Object.values(r.strokes.summary).map((x) => x.consistency).filter((x) => x != null) : [];
+      return v.length ? Math.min(...v) : null; }],
+    ["recovery", "Back to ready after a shot, at most", "max", " s", (r) => r.recovery && r.recovery.median_recovery_ms != null ? r.recovery.median_recovery_ms / 1000 : null],
+    ["rally", "Longest rally, at least", "min", " shots", (r) => r.rallies ? r.rallies.summary.longest : null],
+  ];
+  const GOALS_KEY = "tennis-trainer-goals-v1";
+
+  function readGoals() { try { return JSON.parse(localStorage.getItem(GOALS_KEY)) || {}; } catch { return {}; } }
+  function writeGoals(g) { try { localStorage.setItem(GOALS_KEY, JSON.stringify(g)); } catch { /* storage off */ } }
+
+  function buildGoalsForm() {
+    const form = $("goals-form");
+    if (!form) return;
+    const goals = readGoals();
+    form.replaceChildren();
+    GOALS.forEach(([key, label, , unit]) => {
+      const l = document.createElement("label");
+      l.textContent = label + (unit ? ` (${unit.trim()})` : "");
+      l.htmlFor = "goal-" + key;
+      const input = document.createElement("input");
+      input.type = "number"; input.step = "any"; input.id = "goal-" + key;
+      input.value = goals[key] ?? "";
+      input.addEventListener("change", () => {
+        const g = readGoals();
+        input.value === "" ? delete g[key] : (g[key] = +input.value);
+        writeGoals(g);
+      });
+      form.append(l, input);
+    });
+  }
+
+  function renderGoals(res) {
+    const box = $("goal-results");
+    if (!box) return;
+    const goals = readGoals();
+    const items = GOALS.filter(([key]) => goals[key] != null).map(([key, label, dir, unit, get]) => {
+      const v = get(res), target = goals[key];
+      const li = document.createElement("li");
+      const mark = document.createElement("span");
+      if (v == null) {
+        mark.textContent = "– Not measured";
+        mark.className = "";
+      } else {
+        const met = dir === "min" ? v >= target : v <= target;
+        mark.textContent = met ? "✓ Met" : "✗ Not yet";   // icon + label, not colour alone
+        mark.className = met ? "met" : "unmet";
+      }
+      li.append(mark, ` · ${label.replace(/, at (least|most).*/, "")}: `
+                      + (v == null ? "–" : `${+v.toFixed(2)}${unit}`) + ` (goal ${dir === "min" ? "≥" : "≤"} ${target}${unit})`);
+      return li;
+    });
+    $("goal-list").replaceChildren(...items);
+    box.hidden = !items.length;
+  }
+
   // ── Report download ──────────────────────────────────────────────────────
   let LAST = null;  // {res, file}
 
@@ -587,6 +664,7 @@
     try {
       const res = await analyse(file);
       status(`Done in ${res.processing_s}s · ${res.frames} frames`);
+      renderGoals(res);
       const camTips = (res.camera && res.camera.tips) || [];
       $("camera-notice").textContent = camTips.join(" ");
       $("camera-notice").hidden = !camTips.length;
@@ -608,7 +686,7 @@
   $("chart-metric")?.addEventListener("change", renderChart);
   $("dl-json")?.addEventListener("click", () => download(reportName("json"), "application/json", JSON.stringify(LAST.res, null, 2)));
   $("dl-csv")?.addEventListener("click", () => download(reportName("csv"), "text/csv", toCsv(LAST.res)));
-  loadFeatures().then(renderHistory);
+  loadFeatures().then(() => { renderHistory(); buildGoalsForm(); });
 </script>
 </body>
 </html>

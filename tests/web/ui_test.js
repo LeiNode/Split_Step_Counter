@@ -33,7 +33,7 @@ async function load(flags, { uploadsConfigured = false } = {}) {
   return { dom, doc: dom.window.document, calls };
 }
 
-const ALL = { pose_overlay: true, report_download: true, rally_stats: true, session_history: true, split_step_timing: true, split_step_counting: true, split_step_metrics: true, stroke_training: true,
+const ALL = { drill_goals: true, pose_overlay: true, report_download: true, rally_stats: true, session_history: true, split_step_timing: true, split_step_counting: true, split_step_metrics: true, stroke_training: true,
   forehand_training: true, backhand_training: true, serve_training: true, auto_stroke_detection: true,
   lstm_model: true, rules_model: true, direct_upload: true, browser_uploads: true, live_view: true };
 
@@ -52,6 +52,10 @@ function chooseFile(dom) {
   check(doc.getElementById("go").disabled, "Analyse disabled before a file is chosen");
   chooseFile(dom);
   check(!doc.getElementById("go").disabled, "Analyse enabled after choosing a file");
+  // Goals: one achievable (the fixture has 8 swings in one rally), one not, one unmeasurable
+  const setGoal = (key, v) => { const i = doc.getElementById("goal-" + key); i.value = v; i.dispatchEvent(new dom.window.Event("change")); };
+  check(doc.querySelectorAll("#goals-form input").length === 6, "goal inputs built");
+  setGoal("rally", 5); setGoal("with_split", 90); setGoal("split_rate", 1);
   doc.querySelector('input[value="auto"]').click();
   doc.getElementById("model").value = "rules";
   doc.getElementById("go").click();
@@ -60,6 +64,13 @@ function chooseFile(dom) {
   check(countCall.includes("include_pose=true"), "asks for the skeleton when the overlay is on");
   check(countCall && countCall.includes("drill=auto") && countCall.includes("model=rules") && countCall.includes("hand=auto"),
         "falls back to direct upload with drill/model/hand: " + countCall);
+  const goalText = doc.getElementById("goal-list").textContent;
+  check(!doc.getElementById("goal-results").hidden && doc.querySelectorAll("#goal-list li").length === 3, "three goals listed");
+  check(/✓ Met · Longest rally/.test(goalText), "achieved goal marked met: " + goalText.slice(0, 60));
+  check(/✗ Not yet · Shots with a split step before them/.test(goalText), "missed goal marked not yet");
+  check(/✓ Met · Split steps per minute/.test(goalText), "split-step goal met");
+  setGoal("rally", ""); setGoal("with_split", ""); setGoal("split_rate", "");
+  check(Object.keys(JSON.parse(dom.window.localStorage.getItem("tennis-trainer-goals-v1"))).length === 0, "clearing a box removes the goal");
   check(!doc.getElementById("split-results").hidden, "split-step results shown");
   check(!doc.getElementById("camera-notice").hidden && doc.getElementById("camera-notice").textContent.includes("film from behind"),
         "camera-angle warning shown");
@@ -135,7 +146,8 @@ function chooseFile(dom) {
   // 2. Serve + auto off, rules model off
   ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
   check(modes().join() === "split,forehand,backhand", "disabled modes removed: " + modes());
-  ({ dom, doc, calls } = await load({ ...ALL, session_history: false, report_download: false, pose_overlay: false }));
+  ({ dom, doc, calls } = await load({ ...ALL, session_history: false, report_download: false, pose_overlay: false, drill_goals: false }));
+  check(!doc.getElementById("goal-settings") && !doc.getElementById("goal-results"), "goals removed when switched off");
   check(!doc.getElementById("history"), "history section removed when switched off");
   check(!doc.getElementById("overlay") && !doc.getElementById("show-skeleton"), "overlay removed when switched off");
   chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();

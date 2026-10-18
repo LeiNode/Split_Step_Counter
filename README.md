@@ -191,6 +191,7 @@ everywhere:
 | `direct_upload`, `browser_uploads` | API upload routes |
 | `live_view` | Webcam button in the desktop GUI |
 | `session_history` | Web app: progress table and chart of past sessions, saved in the browser |
+| `drill_goals` | Web app: set targets (split-step rate, consistency, recovery, ...) and see which ones each session met |
 | `rally_stats` | Group swings into rallies: shots per rally, longest rally |
 | `ready_position` | Recovery to a ready stance after each shot |
 | `report_download` | Web app: download results as JSON or CSV |
