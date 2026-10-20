@@ -92,3 +92,11 @@ def test_pose_overlay_switch(monkeypatch):
     monkeypatch.setenv("SPLIT_STEP_FEATURES", "pose_overlay=off")
     r = client.post("/v1/count?include_pose=true", files={"file": ("a.mp4", b"x", "video/mp4")})
     assert r.status_code == 404
+
+
+def test_gui_sound_cues_from_running_counts():
+    from split_step.app import new_events
+    assert new_events((0, None), 0, None) == []
+    assert new_events((0, None), 1, None) == ["split"]                # split steps only, no drill
+    assert new_events((1, 0), 3, 1) == ["split", "swing"]             # dropped frames: one cue per kind
+    assert new_events((3, 1), 3, 1) == []

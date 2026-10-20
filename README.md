@@ -75,6 +75,9 @@ approximate: on test clips it matched the offline analysis on about 85% of
 swings, usually one frame later, and it can miss the first swing. For full
 metrics, use the web app or API.
 
+With **Sound cues** ticked, the GUI beeps on every split step (high tone)
+and swing (lower tone), so you can drill alone without watching the screen.
+
 ## API and web app
 
 ### Run locally
@@ -227,6 +230,7 @@ everywhere:
 | `lstm_model`, `rules_model` | Each split-step model |
 | `direct_upload`, `browser_uploads` | API upload routes |
 | `live_view` | Webcam button in the desktop GUI |
+| `audio_cues` | Desktop GUI: a high beep for each split step, a lower one for each swing (with a checkbox to mute) |
 | `session_history` | Web app: progress table and chart of past sessions, saved in the browser |
 | `session_compare` | Web app: tick two past sessions to compare every metric side by side, marked better / worse (needs `session_history`) |
 | `drill_goals` | Web app: set targets (split-step rate, consistency, recovery, ...) and see which ones each session met |

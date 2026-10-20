@@ -3,6 +3,10 @@ App — tkinter GUI for the Split Step Counter.
 Lets the user pick a video file or start a live webcam feed, displays the
 annotated video, and shows the running split-step count.
 
+Sound cues (feature "audio_cues"): a short high tone for each split step and a
+lower one for each swing, so a player drilling alone in front of the webcam
+gets feedback without looking at the screen.
+
 Threading: analysis runs on a daemon worker thread (VideoAnalysis /
 LiveViewAnalysis) that pushes ("frame" | "done" | "error", ...) tuples onto a
 small queue; _poll() drains it on the Tk main loop every ~16 ms, since Tk
@@ -22,6 +26,21 @@ from .detector import (CANVAS_W, CANVAS_H, GROUNDED, AIRBORNE, LEFT_LEG_UP,
 from . import features
 from .live_view_analysis import LiveViewAnalysis
 from .video_analysis import VideoAnalysis
+
+# kind -> (frequency Hz, duration ms) for winsound; elsewhere the Tk bell rings
+CUE_TONES = {"split": (1000, 80), "swing": (600, 120)}
+
+
+def new_events(prev: tuple[int, int | None], count: int, swings: int | None) -> list[str]:
+    """Cue kinds for what happened since the previous frame message. Counts are
+    cumulative, so frames dropped from the queue don't lose events (several
+    events in one step still get one cue each kind: rapid beeps are noise)."""
+    out = []
+    if count > prev[0]:
+        out.append("split")
+    if swings is not None and prev[1] is not None and swings > prev[1]:
+        out.append("swing")
+    return out
 
 
 class App:
@@ -66,6 +85,8 @@ class App:
                 self._drills[f"{d.capitalize()} drill"] = d
         self._drill_var = tk.StringVar(value="Split steps only")
         self._hand_var  = tk.StringVar(value="Right-handed")
+        self._sound_var = tk.BooleanVar(value=True)
+        self._last_counts: tuple[int, int | None] = (0, None)
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -111,6 +132,15 @@ class App:
                          state="readonly", width=15).pack(side=tk.LEFT)
             ttk.Combobox(row, textvariable=self._hand_var, values=["Right-handed", "Left-handed"],
                          state="readonly", width=11).pack(side=tk.RIGHT)
+
+        if self._flags["audio_cues"]:
+            tk.Checkbutton(ctrl, text="Sound cues (split step / swing)",
+                           variable=self._sound_var,
+                           bg=self.BG, fg=self.FG_DIM,
+                           selectcolor=self.BG2,
+                           activebackground=self.BG,
+                           activeforeground=self.FG,
+                           font=("Helvetica", 9)).pack(anchor=tk.W, pady=(6, 0))
 
         ttk.Separator(ctrl, orient="horizontal").pack(fill=tk.X, pady=16)
 
@@ -219,6 +249,7 @@ class App:
 
         self._count_var.set("0")
         drill = worker._drill
+        self._last_counts = (0, 0 if drill else None)
         if drill:
             self._swing_title.set(f"{drill.upper()}S")
             self._swing_var.set("0")
@@ -248,6 +279,10 @@ class App:
                     self._canvas.delete("all")
                     self._canvas.create_image(0, 0, anchor=tk.NW, image=self._photo)
                     self._count_var.set(str(count))
+                    if self._flags["audio_cues"] and self._sound_var.get():
+                        for kind in new_events(self._last_counts, count, swings):
+                            self._cue(kind)
+                    self._last_counts = (count, swings)
                     if swings is not None:
                         self._swing_var.set(str(swings))
                     self._set_status(*self._STATUS.get(state, self._STATUS[GROUNDED]))
@@ -266,6 +301,15 @@ class App:
             pass
 
         self.root.after(16, self._poll)  # ~60 fps
+
+    def _cue(self, kind: str):
+        try:
+            import winsound
+        except ImportError:          # not Windows
+            self.root.bell()
+            return
+        # Beep blocks for its duration; keep it off the UI thread
+        threading.Thread(target=winsound.Beep, args=CUE_TONES[kind], daemon=True).start()
 
     def _set_status(self, text: str, color: str):
         self._status_var.set(text)
