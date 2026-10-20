@@ -7,6 +7,9 @@ Sound cues (feature "audio_cues"): a short high tone for each split step and a
 lower one for each swing, so a player drilling alone in front of the webcam
 gets feedback without looking at the screen.
 
+Rep target (feature "rep_target"): in a live drill, set how many swings make a
+set; the counter shows "12 / 20" and a longer tone marks the set complete.
+
 Threading: analysis runs on a daemon worker thread (VideoAnalysis /
 LiveViewAnalysis) that pushes ("frame" | "done" | "error", ...) tuples onto a
 small queue; _poll() drains it on the Tk main loop every ~16 ms, since Tk
@@ -28,7 +31,7 @@ from .live_view_analysis import LiveViewAnalysis
 from .video_analysis import VideoAnalysis
 
 # kind -> (frequency Hz, duration ms) for winsound; elsewhere the Tk bell rings
-CUE_TONES = {"split": (1000, 80), "swing": (600, 120)}
+CUE_TONES = {"split": (1000, 80), "swing": (600, 120), "set": (1300, 450)}
 
 
 def new_events(prev: tuple[int, int | None], count: int, swings: int | None) -> list[str]:
@@ -41,6 +44,13 @@ def new_events(prev: tuple[int, int | None], count: int, swings: int | None) -> 
     if swings is not None and prev[1] is not None and swings > prev[1]:
         out.append("swing")
     return out
+
+
+def swing_display(swings: int, target: int) -> tuple[str, bool]:
+    """Swing counter text and whether the set is complete (target 0 = no target)."""
+    if target <= 0:
+        return str(swings), False
+    return f"{swings} / {target}", swings >= target
 
 
 class App:
@@ -86,6 +96,8 @@ class App:
         self._drill_var = tk.StringVar(value="Split steps only")
         self._hand_var  = tk.StringVar(value="Right-handed")
         self._sound_var = tk.BooleanVar(value=True)
+        self._reps_var  = tk.StringVar(value="0")
+        self._target, self._set_done = 0, False
         self._last_counts: tuple[int, int | None] = (0, None)
 
         self._build_ui()
@@ -132,6 +144,12 @@ class App:
                          state="readonly", width=15).pack(side=tk.LEFT)
             ttk.Combobox(row, textvariable=self._hand_var, values=["Right-handed", "Left-handed"],
                          state="readonly", width=11).pack(side=tk.RIGHT)
+            if self._flags["rep_target"]:
+                reps = tk.Frame(ctrl, bg=self.BG)
+                reps.pack(fill=tk.X, pady=(6, 0))
+                tk.Label(reps, text="Swings per set (0 = no target)", font=("Helvetica", 9),
+                         bg=self.BG, fg=self.FG_DIM).pack(side=tk.LEFT)
+                tk.Spinbox(reps, from_=0, to=500, width=5, textvariable=self._reps_var).pack(side=tk.RIGHT)
 
         if self._flags["audio_cues"]:
             tk.Checkbutton(ctrl, text="Sound cues (split step / swing)",
@@ -250,9 +268,14 @@ class App:
         self._count_var.set("0")
         drill = worker._drill
         self._last_counts = (0, 0 if drill else None)
+        try:
+            self._target = max(0, int(self._reps_var.get())) if self._flags["rep_target"] else 0
+        except ValueError:
+            self._target = 0
+        self._set_done = False
         if drill:
             self._swing_title.set(f"{drill.upper()}S")
-            self._swing_var.set("0")
+            self._swing_var.set(swing_display(0, self._target)[0])
             self._swing_box.pack()
         else:
             self._swing_box.pack_forget()
@@ -284,7 +307,13 @@ class App:
                             self._cue(kind)
                     self._last_counts = (count, swings)
                     if swings is not None:
-                        self._swing_var.set(str(swings))
+                        text, done = swing_display(swings, self._target)
+                        self._swing_var.set(text)
+                        if done and not self._set_done:
+                            self._set_done = True
+                            self._swing_title.set(self._swing_title.get() + " · SET COMPLETE ✓")
+                            if self._flags["audio_cues"] and self._sound_var.get():
+                                self._cue("set")
                     self._set_status(*self._STATUS.get(state, self._STATUS[GROUNDED]))
 
                 elif kind == "done":

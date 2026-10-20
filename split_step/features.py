@@ -43,6 +43,7 @@ DEFAULTS: dict[str, tuple[bool, str]] = {
     "direct_upload":       (True,  "API: POST /v1/count with the video in the request"),
     "browser_uploads":     (True,  "API: presigned S3 uploads (/v1/upload-url, /v1/count/s3)"),
     "live_view":           (True,  "Desktop GUI: webcam live view"),
+    "rep_target":          (True,  "Desktop GUI: swings per set in live drills, with a set-complete signal"),
     "audio_cues":          (True,  "Desktop GUI: a beep for each split step and swing"),
     "pose_overlay":        (True,  "Web app: draw the detected skeleton over the video (API: include_pose)"),
     "playback_controls":   (True,  "Web app: slow motion, previous/next shot and frame-step controls"),
@@ -67,6 +68,7 @@ PARENTS = {
     "swing_chart": ("stroke_training",),
     "session_compare": ("session_history",),
     "history_transfer": ("session_history",),
+    "rep_target": ("stroke_training",),
     "practice_plan": ("coach_summary",),
     "ready_position": ("stroke_training",),
 }

@@ -77,6 +77,8 @@ metrics, use the web app or API.
 
 With **Sound cues** ticked, the GUI beeps on every split step (high tone)
 and swing (lower tone), so you can drill alone without watching the screen.
+Set **Swings per set** to work in sets: the counter shows "12 / 20" and a
+long tone marks the set complete.
 
 ## API and web app
 
@@ -231,6 +233,7 @@ everywhere:
 | `lstm_model`, `rules_model` | Each split-step model |
 | `direct_upload`, `browser_uploads` | API upload routes |
 | `live_view` | Webcam button in the desktop GUI |
+| `rep_target` | Desktop GUI: set swings per set in a live drill; shows "12 / 20" and signals when the set is done |
 | `audio_cues` | Desktop GUI: a high beep for each split step, a lower one for each swing (with a checkbox to mute) |
 | `session_history` | Web app: progress table and chart of past sessions, saved in the browser |
 | `history_transfer` | Web app: export your history to a JSON file and import it in another browser or device (merged, no duplicates) |

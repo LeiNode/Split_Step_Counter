@@ -100,3 +100,10 @@ def test_gui_sound_cues_from_running_counts():
     assert new_events((0, None), 1, None) == ["split"]                # split steps only, no drill
     assert new_events((1, 0), 3, 1) == ["split", "swing"]             # dropped frames: one cue per kind
     assert new_events((3, 1), 3, 1) == []
+
+
+def test_gui_rep_target_display():
+    from split_step.app import swing_display
+    assert swing_display(7, 0) == ("7", False)
+    assert swing_display(7, 20) == ("7 / 20", False)
+    assert swing_display(20, 20) == ("20 / 20", True)
