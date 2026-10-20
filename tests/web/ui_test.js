@@ -124,6 +124,13 @@ function chooseFile(dom) {
   const before = player.currentTime;
   doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "." }));
   check(Math.abs(player.currentTime - before - 1 / analysis.fps) < 0.001, ". steps one frame forward");
+  // Current-row highlight follows the video
+  const sw3 = analysis.strokes.swings[3].timestamp_ms;
+  player.currentTime = sw3 / 1000 + 0.2; player.dispatchEvent(new dom.window.Event("timeupdate"));
+  const cur = [...doc.querySelectorAll("#stroke-table tr")].findIndex((r) => r.classList.contains("current"));
+  check(cur === 4 && doc.querySelectorAll("#stroke-table tr.current").length === 1, "row of the swing on screen is highlighted");
+  player.currentTime = 0.0; player.dispatchEvent(new dom.window.Event("timeupdate"));
+  check(doc.querySelectorAll("#split-table tr.current").length === 0, "no split-step row marked away from any split step");
   const sp = doc.getElementById("speed");
   sp.value = "0.25"; sp.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
   check(player.playbackRate === 0.25, "slow motion sets the playback rate");

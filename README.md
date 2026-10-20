@@ -243,7 +243,7 @@ everywhere:
 | `swing_highlights` | Most typical, fastest and odd-one-out swing of each stroke (with the metric that made it odd), linked to the video |
 | `rally_stats` | Group swings into rallies: shots per rally, longest rally |
 | `ready_position` | Recovery to a ready stance after each shot |
-| `playback_controls` | Web app: slow motion (½×, ¼×), previous/next shot buttons, and keys `[` `]` (shot to shot) and `,` `.` (one frame) |
+| `playback_controls` | Web app: slow motion (½×, ¼×), previous/next shot buttons, and keys `[` `]` (shot to shot) and `,` `.` (one frame); the table row of the shot on screen is highlighted as the video plays |
 | `markdown_report` | `POST /v1/report` and the web app's "Download report (Markdown)" button |
 | `report_download` | Web app: download results as JSON or CSV, or print / save a clean PDF report |
 | `pose_overlay` | Web app: skeleton drawn over the video (API: `include_pose`) |

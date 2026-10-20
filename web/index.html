@@ -87,6 +87,8 @@
                  border-radius: 6px; padding: .3rem .5rem; font-size: .8rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
     .chart-tip b { display: block; }
     .playback { margin-top: .5rem; }
+    tr.current td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+    tr.current td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
     #upload-card.dragging { border: 2px dashed var(--accent); padding: calc(1rem - 1px); }
     .keys { color: var(--dim); font-size: .8rem; }
     kbd { font: inherit; font-size: .75rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 .3rem; }
@@ -560,6 +562,23 @@
     const ms = dir > 0 ? MARKS.find((m) => m > ref + 250) : [...MARKS].reverse().find((m) => m < ref - 250);
     if (ms !== undefined) seekLink(ms).onclick();
   }
+
+  // While the video plays, mark the table row of the moment on screen
+  // (within CURRENT_WINDOW_S of it), so the numbers follow the video.
+  const CURRENT_WINDOW_S = 0.6;
+  function markCurrentRows() {
+    if (!$("playback") || !LAST) return;
+    const t = $("player").currentTime * 1000;
+    const mark = (table, items) => {
+      const rows = [...table.rows].slice(1);
+      let best = -1, gap = CURRENT_WINDOW_S * 1000;
+      items.forEach((it, i) => { const d = Math.abs(it.timestamp_ms - t); if (d <= gap) { gap = d; best = i; } });
+      rows.forEach((r, i) => r.classList.toggle("current", i === best));
+    };
+    mark($("split-table"), LAST.res.events || []);
+    if (LAST.res.strokes) mark($("stroke-table"), LAST.res.strokes.swings);
+  }
+  ["timeupdate", "seeked"].forEach((ev) => $("player").addEventListener(ev, markCurrentRows));
 
   function stepFrame(dir) {
     const p = $("player");
