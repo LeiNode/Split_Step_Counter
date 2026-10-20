@@ -154,3 +154,26 @@ def test_head_movement_at_contact():
     assert not any("head still" in t for t in stroke_tips("forehand", still))
     assert any("head still" in t for t in stroke_tips("backhand", moving))
     assert not any("head still" in t for t in stroke_tips("backhand", moving[:2]))   # too few swings
+
+
+def _coil(w, turned_from, until):
+    """Shoulders turned 90° (side-on) from frame `turned_from` to `until`, square otherwise."""
+    for k in range(len(w)):
+        a = np.pi / 2 if turned_from <= k < until else 0.0
+        w[k, LEFT_SHOULDER, [0, 2]] = (-0.2 * np.cos(a), -0.2 * np.sin(a))
+        w[k, RIGHT_SHOULDER, [0, 2]] = (0.2 * np.cos(a), 0.2 * np.sin(a))
+
+
+def test_preparation_timing():
+    from split_step.strokes import CONTACT_LEAD_MS, stroke_tips, swing_metrics
+    contact_ms = 60 * 1000 / FPS - CONTACT_LEAD_MS
+    w = _body(120)
+    _coil(w, 30, 58)                                          # turned 1 s before the peak at frame 60
+    early = swing_metrics(_track(w), 60, "forehand", "right", 10.0)["prep_lead_ms"]
+    assert abs(early - (contact_ms - 30 * 1000 / FPS)) < 1
+    _coil(w, 52, 58)                                          # turned only ~130 ms before contact
+    late = swing_metrics(_track(w), 60, "forehand", "right", 10.0)["prep_lead_ms"]
+    assert late < 200
+    assert swing_metrics(_track(_body(120)), 60, "forehand", "right", 10.0)["prep_lead_ms"] is None  # no turn
+    assert any("prepare earlier" in t for t in stroke_tips("forehand", [{"prep_lead_ms": late}] * 3))
+    assert not any("prepare earlier" in t for t in stroke_tips("forehand", [{"prep_lead_ms": early}] * 3))

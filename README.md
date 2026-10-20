@@ -13,7 +13,7 @@ analyses run on them:
   Each split step is scored on hop height, landing knee bend and stance width.
 - **Stroke training.** Detects swings and gives feedback per stroke:
   - forehand / backhand: contact height, shoulder turn, follow-through, knee load,
-    head stillness through contact
+    head stillness through contact, preparation timing (how early the shoulders turn)
   - serve: reach, toss height, elbow extension, trophy-position knee bend
   - a **consistency score** (0–100) per stroke: how repeatable the swings
     are. Pros score about 55–70 on practice footage, because measurement
@@ -135,6 +135,7 @@ What the metrics mean:
 | Angles | Degrees; 180 = straight |
 | `contact_height` | 0 = hips, 1 = shoulders |
 | `head_movement_m` | Metres the head (nose) moves around contact; pros measured ~0.06 m |
+| `prep_lead_ms` | How long before contact the shoulders were turned. Pros measured medians of 0.3–0.5 s on forehands (the coil continues until just before the swing) and 0.7–1.3 s on backhands. Capped at ~1.4 s (turned before the measuring window) |
 | `peak_wrist_speed` | m/s of the hand, not the racket head. Useful for comparing your own swings, not as an absolute speed. |
 
 The coaching-tip thresholds are heuristics, not values fitted to data.

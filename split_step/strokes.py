@@ -64,6 +64,14 @@ TIP_CONSISTENCY     = 50    # consistency score below this -> tip
 # floor from body rotation + pose noise; the tip fires well above it.
 HEAD_WINDOW_MS      = (-200, 100)
 TIP_HEAD_MOVEMENT   = 0.15  # m
+# Preparation: how long before contact the shoulders are (nearly) fully turned
+# away from where they finish. Pro footage (Sinner practice + broadcast points,
+# 2026-10-19): forehands median 300-500 ms, backhands 700-1270 ms (a forehand
+# keeps coiling until just before the forward swing). Single swings range
+# ~100-1400 ms, so only the median over several swings is judged.
+PREP_WINDOW_MS      = (-1500, 300)  # around the wrist-speed peak
+PREP_COIL_FRACTION  = 0.8   # "turned" = at least this share of the deepest coil
+TIP_PREP_LATE_MS    = {"forehand": 200, "backhand": 400}
 
 # Shot-to-shot spread (std) at which a metric scores 0 for consistency. Speed is
 # relative (std / mean); the rest are absolute, in each metric's own unit.
@@ -246,20 +254,9 @@ def swing_metrics(track: PoseTrack, i: int, stroke: str, hand: str, speed: float
         if hip_y - sh_y > 1e-3:
             contact_h = round(float((hip_y - w[wrist, 1]) / (hip_y - sh_y)), 2)
 
-    # Shoulder rotation through the stroke (heading of the shoulder line on the ground plane)
-    headings = []
-    for k in _frames(track, t, -800, 300):
-        if track.visible(k, (LEFT_SHOULDER, RIGHT_SHOULDER)):
-            d = track.world[k, RIGHT_SHOULDER, [0, 2]] - track.world[k, LEFT_SHOULDER, [0, 2]]
-            headings.append(np.arctan2(d[1], d[0]))
-    turn = None
-    if len(headings) >= 3:
-        # The shoulder line is an axis, not a direction: when MediaPipe briefly
-        # swaps left/right shoulders the heading jumps 180° and a plain unwrap
-        # would count that as rotation (it produced "287°" on real footage).
-        # Unwrapping the doubled angle makes headings 180° apart identical.
-        h = np.degrees(np.unwrap(2 * np.array(headings)) / 2)
-        turn = round(float(min(h.max() - h.min(), 180.0)), 1)
+    # Shoulder rotation through the stroke
+    _, h = _shoulder_headings(track, t, -800, 300)
+    turn = round(float(min(h.max() - h.min(), 180.0)), 1) if len(h) >= 3 else None
 
     # Head stillness: how far the nose wanders around contact. World coords are
     # hip-relative, so running doesn't count; depth (z) is left out as too noisy.
@@ -277,8 +274,43 @@ def swing_metrics(track: PoseTrack, i: int, stroke: str, hand: str, speed: float
         "finish_above_shoulder_m": None if not np.isfinite(finish) else round(finish, 2),
         "load_knee_angle": load_knee,
         "head_movement_m": head,
+        "prep_lead_ms": _prep_lead_ms(track, t),
     })
     return m
+
+
+def _shoulder_headings(track, t, lo, hi):
+    """(timestamps, headings in degrees) of the shoulder line on the ground
+    plane, for frames t+lo .. t+hi with both shoulders visible."""
+    ks = [k for k in _frames(track, t, lo, hi) if track.visible(k, (LEFT_SHOULDER, RIGHT_SHOULDER))]
+    if not ks:
+        return np.array([]), np.array([])
+    d = track.world[ks][:, RIGHT_SHOULDER][:, [0, 2]] - track.world[ks][:, LEFT_SHOULDER][:, [0, 2]]
+    # The shoulder line is an axis, not a direction: when MediaPipe briefly
+    # swaps left/right shoulders the heading jumps 180° and a plain unwrap
+    # would count that as rotation (it produced "287°" on real footage).
+    # Unwrapping the doubled angle makes headings 180° apart identical.
+    return track.ts_ms[ks], np.degrees(np.unwrap(2 * np.arctan2(d[:, 1], d[:, 0])) / 2)
+
+
+def _prep_lead_ms(track, t) -> float | None:
+    """How long before contact the shoulders were turned (PREP_COIL_FRACTION of
+    the deepest coil away from the finish heading) and stayed turned. Capped by
+    the window: the largest value means "turned before the window began"."""
+    ts, h = _shoulder_headings(track, t, *PREP_WINDOW_MS)
+    contact = t - CONTACT_LEAD_MS
+    after = ts >= t + 100
+    if len(ts) < 10 or not after.any() or not (ts <= contact).any():
+        return None
+    coil = np.abs(h - np.median(h[after]))      # how far the shoulders are turned from the finish
+    k = int(np.argmax(np.where(ts <= contact, coil, -1)))
+    if coil[k] < 20:                            # no real turn to time
+        return None
+    # Walk back while still turned (and no tracking gap over 150 ms)
+    limit = PREP_COIL_FRACTION * coil[k]
+    while k > 0 and coil[k - 1] >= limit and ts[k] - ts[k - 1] <= 150:
+        k -= 1
+    return round(float(contact - ts[k]), 1)
 
 
 def _median(swings, key):
@@ -336,9 +368,9 @@ def stroke_tips(stroke: str, swings: list[dict]) -> list[str]:
             tips.append(f"Serve: your toss release point moves around (±{np.std(lat) * 100:.0f} cm sideways). "
                         "Release the ball from the same spot every time for a repeatable toss.")
     else:
-        c, turn, f, k, head = (_median(swings, x) for x in
-                               ("contact_height", "shoulder_turn_deg", "finish_above_shoulder_m",
-                                "load_knee_angle", "head_movement_m"))
+        c, turn, f, k, head, prep = (_median(swings, x) for x in
+                                     ("contact_height", "shoulder_turn_deg", "finish_above_shoulder_m",
+                                      "load_knee_angle", "head_movement_m", "prep_lead_ms"))
         if c is not None and c < TIP_CONTACT_LOW:
             tips.append(f"{name}: you're making contact low. Bend your knees and get down to the ball.")
         if c is not None and c > TIP_CONTACT_HIGH:
@@ -352,6 +384,9 @@ def stroke_tips(stroke: str, swings: list[dict]) -> list[str]:
         if head is not None and head > TIP_HEAD_MOVEMENT and len(swings) >= CONSISTENCY_MIN_SWINGS:
             tips.append(f"{name}: keep your head still through contact (it moves ~{head * 100:.0f} cm). "
                         "Watch the contact point until the ball is gone.")
+        if prep is not None and prep < TIP_PREP_LATE_MS[stroke] and len(swings) >= CONSISTENCY_MIN_SWINGS:
+            tips.append(f"{name}: prepare earlier. Your shoulders are turned only ~{prep / 1000:.1f} s before "
+                        "contact; start the unit turn as soon as you see which side the ball is coming to.")
     if not tips:
         tips.append(f"{name}: technique metrics look solid. Keep it up!")
     return tips
