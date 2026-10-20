@@ -75,6 +75,9 @@ approximate: on test clips it matched the offline analysis on about 85% of
 swings, usually one frame later, and it can miss the first swing. For full
 metrics, use the web app or API.
 
+After picking a video file, **Save full report…** runs the complete analysis
+(the same as the web app) in the background and saves a Markdown report.
+
 With **Sound cues** ticked, the GUI beeps on every split step (high tone)
 and swing (lower tone), so you can drill alone without watching the screen.
 Set **Swings per set** to work in sets: the counter shows "12 / 20" and a

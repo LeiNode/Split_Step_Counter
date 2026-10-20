@@ -10,6 +10,10 @@ gets feedback without looking at the screen.
 Rep target (feature "rep_target"): in a live drill, set how many swings make a
 set; the counter shows "12 / 20" and a longer tone marks the set complete.
 
+Full report (feature "markdown_report"): runs the complete offline analysis
+(analyze.py) on the chosen file in the background, saves the Markdown report
+and shows the coach's top points.
+
 Threading: analysis runs on a daemon worker thread (VideoAnalysis /
 LiveViewAnalysis) that pushes ("frame" | "done" | "error", ...) tuples onto a
 small queue; _poll() drains it on the Tk main loop every ~16 ms, since Tk
@@ -128,6 +132,11 @@ class App:
                                          self.ACCENT, self.PURPLE, state=tk.DISABLED)
         self._btn_process.pack(fill=tk.X, pady=(0, 4))
 
+        self._btn_report = self._button(ctrl, "Save full report…", self._save_report, self.BG2, self.ACCENT,
+                                        fg=self.FG, pady=4, font=("Helvetica", 9), state=tk.DISABLED)
+        if self._flags["markdown_report"]:
+            self._btn_report.pack(fill=tk.X, pady=(0, 4))
+
         if self._flags["lstm_model"] and self._flags["rules_model"]:
             tk.Checkbutton(ctrl, text="Use LSTM model",
                            variable=self._use_lstm,
@@ -234,6 +243,7 @@ class App:
             self._video_path = path
             self._file_label.config(text=os.path.basename(path), fg=self.FG)
             self._btn_process.config(state=tk.NORMAL)
+            self._btn_report.config(state=tk.NORMAL)
 
     def _drill_kwargs(self) -> dict:
         drill = self._drills.get(self._drill_var.get())
@@ -248,6 +258,31 @@ class App:
     def _start_live(self):
         self._launch(LiveViewAnalysis(self._queue, self._stop,
                                       use_lstm=self._use_lstm.get(), **self._drill_kwargs()))
+
+    def _save_report(self):
+        if not self._video_path:
+            return
+        stem = os.path.splitext(os.path.basename(self._video_path))[0]
+        out = filedialog.asksaveasfilename(title="Save report as", defaultextension=".md",
+                                           initialfile=f"{stem}-report.md",
+                                           filetypes=[("Markdown", "*.md"), ("All files", "*.*")])
+        if not out:
+            return
+        self._btn_report.config(state=tk.DISABLED, text="Analysing…")
+        video, kwargs = self._video_path, dict(self._drill_kwargs(), model="lstm" if self._use_lstm.get() else "rules")
+
+        def work():
+            from .analyze import analyze_video
+            from .report import to_markdown
+            try:
+                result = analyze_video(video, **kwargs)
+                with open(out, "w", encoding="utf-8") as f:
+                    f.write(to_markdown(result, os.path.basename(video)))
+                self._queue.put(("report", out, (result.get("coach") or {}).get("focus", []), None))
+            except Exception as e:          # shown to the user, not swallowed
+                self._queue.put(("report", out, [], str(e)))
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _request_stop(self):
         self._stop.set()
@@ -320,6 +355,15 @@ class App:
                     self._count_var.set(str(item[1]))
                     self._set_status("Complete", self.FG_DIM)
                     self._reset_buttons()
+
+                elif kind == "report":
+                    _, out, focus, err = item
+                    self._btn_report.config(state=tk.NORMAL, text="Save full report…")
+                    if err:
+                        messagebox.showerror("Report failed", err)
+                    else:
+                        points = "\n".join(f"{n}. {t}" for n, t in enumerate(focus, 1)) or "Nothing urgent. Nice!"
+                        messagebox.showinfo("Report saved", f"Saved {os.path.basename(out)}\n\nWork on these first:\n{points}")
 
                 elif kind == "error":
                     messagebox.showerror("Error", item[1])
