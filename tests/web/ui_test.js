@@ -123,6 +123,15 @@ function chooseFile(dom) {
   sp.value = "0.25"; sp.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
   check(player.playbackRate === 0.25, "slow motion sets the playback rate");
 
+  // Swing speed chart: one dot per swing, legend for several stroke types, click seeks
+  const dots = doc.querySelectorAll("#speed-chart circle.dot");
+  check(!doc.getElementById("speed-box").hidden && dots.length === analysis.strokes.swings.length, `speed chart has ${dots.length} dots`);
+  check(doc.getElementById("speed-legend").textContent.includes("Backhand"), "speed chart legend lists strokes");
+  dots[0].dispatchEvent(new dom.window.FocusEvent("focus"));
+  check(!doc.getElementById("speed-tip").hidden && doc.getElementById("speed-tip").textContent.includes("m/s"), "focusing a dot shows its speed");
+  dots[3].dispatchEvent(new dom.window.Event("click"));
+  check(Math.abs(player.currentTime - Math.max(0, analysis.strokes.swings[3].timestamp_ms / 1000 - 1)) < 0.01, "clicking a dot seeks");
+
   // Rallies
   check(doc.getElementById("stroke-stats").textContent.includes("Longest rally"), "rally stats shown");
   check(doc.getElementById("stroke-table").textContent.includes("Rally"), "rally column shown");
@@ -209,6 +218,8 @@ function chooseFile(dom) {
   check(!doc.getElementById("playback"), "playback controls removed when switched off");
   ({ dom, doc } = await load({ ...ALL, swing_highlights: false }));
   check(!doc.getElementById("highlights"), "highlights removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, swing_chart: false }));
+  check(!doc.getElementById("speed-box"), "speed chart removed when switched off");
   ({ dom, doc } = await load({ ...ALL, session_compare: false }));
   check(!doc.getElementById("compare"), "compare removed when switched off");
   doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "]" }));   // must not throw

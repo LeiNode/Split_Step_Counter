@@ -17,7 +17,8 @@ import cv2
 
 BANNER_MS = 800
 _GREEN = (136, 196, 92)        # BGR, matches the web overlay
-_STROKE_BGR = {"forehand": (176, 108, 43), "backhand": (191, 79, 138), "serve": (43, 130, 217), "unknown": (143, 148, 138)}
+# Same stroke colours as the web app (colour-blind-safe set), BGR
+_STROKE_BGR = {"forehand": (214, 120, 42), "backhand": (52, 104, 235), "serve": (122, 175, 27), "unknown": (143, 148, 138)}
 
 
 def _nearest(ts: list[float], ms: float, max_gap: float = 100) -> int | None:

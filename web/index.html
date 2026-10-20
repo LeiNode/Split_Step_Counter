@@ -16,9 +16,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tennis Trainer</title>
   <style>
-    :root { --bg:#f6f7f4; --card:#fff; --ink:#1d2421; --dim:#5f6b66; --line:#dde2de; --accent:#2f7d4f; --warn:#b5651d; }
+    :root { --bg:#f6f7f4; --card:#fff; --ink:#1d2421; --dim:#5f6b66; --line:#dde2de; --accent:#2f7d4f; --warn:#b5651d;
+            /* stroke identity: validated all-pairs for colour-vision deficiency, per theme */
+            --s-forehand:#2a78d6; --s-backhand:#eb6834; --s-serve:#1baf7a; --s-unknown:#8a948f; }
     @media (prefers-color-scheme: dark) {
-      :root { --bg:#141816; --card:#1d2320; --ink:#e6ebe8; --dim:#9aa6a0; --line:#2e3632; --accent:#5cc488; --warn:#e3a35b; }
+      :root { --bg:#141816; --card:#1d2320; --ink:#e6ebe8; --dim:#9aa6a0; --line:#2e3632; --accent:#5cc488; --warn:#e3a35b;
+              --s-forehand:#3987e5; --s-backhand:#d95926; --s-serve:#199e70; --s-unknown:#7d8782; }
     }
     * { box-sizing: border-box; }
     body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, sans-serif; }
@@ -54,8 +57,17 @@
     .timeline .mk { position: absolute; top: 3px; width: 6px; height: 22px; margin-left: -3px; border-radius: 3px; border: 0; padding: 0; cursor: pointer; }
     .legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .8rem; color: var(--dim); margin-top: .35rem; }
     .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: .3rem; vertical-align: -1px; }
-    .k-split { background: #2f9e5b; } .k-forehand { background: #2b6cb0; } .k-backhand { background: #8a4fbf; }
-    .k-serve { background: #d9822b; } .k-unknown { background: #8a948f; }
+    /* Split steps aren't strokes: neutral ink and a shorter mark, not a fourth hue */
+    .k-split { background: var(--ink); } .timeline .mk.k-split { top: 8px; height: 12px; }
+    .k-forehand { background: var(--s-forehand); } .k-backhand { background: var(--s-backhand); }
+    .k-serve { background: var(--s-serve); } .k-unknown { background: var(--s-unknown); }
+    .speed-chart { position: relative; margin: .25rem 0 1rem; }
+    .speed-chart svg { display: block; width: 100%; height: auto; aspect-ratio: 600 / 180; overflow: visible; }
+    .speed-chart .grid { stroke: var(--line); stroke-width: 1; }
+    .speed-chart .axis-label { fill: var(--dim); font-size: 11px; }
+    .speed-chart .dot { stroke: var(--card); stroke-width: 2; cursor: pointer; }
+    .speed-chart .dot:focus { outline: none; stroke: var(--ink); }
+    .speed-chart .hit { fill: transparent; cursor: pointer; }
     .linkish { background: none; color: var(--dim); border: 1px solid var(--line); padding: .3rem .7rem; font-weight: 400; }
     .notice { border-color: var(--warn); color: var(--warn); }
     .goals-form { display: grid; grid-template-columns: 1fr auto; gap: .35rem 1rem; align-items: center; margin-top: .5rem; }
@@ -201,6 +213,14 @@
   <section class="card" id="stroke-results" hidden>
     <h2 id="stroke-title">Strokes</h2>
     <div class="stats" id="stroke-stats"></div>
+    <div id="speed-box" data-feature="swing_chart" hidden>
+      <p class="status">Wrist speed of each swing through the clip (click a dot to watch it):</p>
+      <div class="legend" id="speed-legend"></div>
+      <div class="speed-chart">
+        <svg id="speed-chart" role="img"></svg>
+        <div class="chart-tip" id="speed-tip" hidden></div>
+      </div>
+    </div>
     <div id="highlights" data-feature="swing_highlights" hidden>
       <p class="status">Worth watching back:</p>
       <ul class="tips" id="highlight-list"></ul>
@@ -387,6 +407,71 @@
                                  ...(res.recovery ? res.recovery.tips : []),
                                  ...(res.footwork ? res.footwork.tips : []),
                                  ...(res.fatigue ? res.fatigue.tips : [])]);
+  }
+
+  // ── Swing speed through the clip (dot per swing, colour = stroke) ────────
+  function renderSpeedChart(res) {
+    const box = $("speed-box");
+    if (!box) return;
+    const sw = res.strokes ? res.strokes.swings.filter((s) => s.peak_wrist_speed != null) : [];
+    box.hidden = sw.length < 2 || !res.duration_ms;
+    if (box.hidden) return;
+    const svg = $("speed-chart"), tip = $("speed-tip");
+    svg.replaceChildren(); tip.hidden = true;
+    const W = 600, H = 180, L = 40, R = 10, T = 10, B = 24;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("aria-label", `Wrist speed of ${sw.length} swings over ${sec(res.duration_ms)}`);
+    const v = sw.map((s) => s.peak_wrist_speed);
+    const lo = Math.max(0, Math.floor(Math.min(...v) - 1)), hi = Math.ceil(Math.max(...v) + 1);
+    const x = (ms) => L + (ms / res.duration_ms) * (W - L - R);
+    const y = (val) => T + (1 - (val - lo) / (hi - lo)) * (H - T - B);
+    for (let g = 0; g <= 3; g++) {                            // recessive grid, y labels in m/s
+      const val = lo + (g / 3) * (hi - lo);
+      svg.append(svgEl("line", { class: "grid", x1: L, x2: W - R, y1: y(val), y2: y(val) }));
+      const t = svgEl("text", { class: "axis-label", x: L - 6, y: y(val) + 4, "text-anchor": "end" });
+      t.textContent = val.toFixed(0) + (g === 3 ? " m/s" : "");
+      svg.append(t);
+    }
+    [0, res.duration_ms].forEach((ms, i) => {
+      const t = svgEl("text", { class: "axis-label", x: x(ms), y: H - 6, "text-anchor": i ? "end" : "start" });
+      t.textContent = sec(ms);
+      svg.append(t);
+    });
+    const show = (s) => {
+      tip.innerHTML = "<b></b><span></span>";
+      tip.querySelector("b").textContent = `${KIND_LABEL[s.stroke] || s.stroke} · ${fmt(s.peak_wrist_speed, 1, " m/s")}`;
+      tip.querySelector("span").textContent = `at ${sec(s.timestamp_ms)}`;
+      tip.hidden = false;
+      const r = svg.getBoundingClientRect();
+      tip.style.left = Math.min(Math.max(0, (x(s.timestamp_ms) / W) * r.width - 60), Math.max(0, r.width - 150)) + "px";
+      tip.style.top = Math.max(0, (y(s.peak_wrist_speed) / H) * r.height - 50) + "px";
+    };
+    const hide = () => { tip.hidden = true; };
+    sw.forEach((s) => {
+      const cx = x(s.timestamp_ms), cy = y(s.peak_wrist_speed);
+      const label = `${KIND_LABEL[s.stroke] || s.stroke} at ${sec(s.timestamp_ms)}: ${fmt(s.peak_wrist_speed, 1, " m/s")}`;
+      const dot = svgEl("circle", { class: "dot", cx, cy, r: 4.5, fill: `var(--s-${s.stroke}, var(--s-unknown))`,
+                                    tabindex: 0, role: "button", "aria-label": label });
+      const hit = svgEl("circle", { class: "hit", cx, cy, r: 12 });   // target bigger than the mark
+      [dot, hit].forEach((el) => {
+        el.addEventListener("pointerenter", () => show(s));
+        el.addEventListener("pointerleave", hide);
+        el.addEventListener("click", () => seekLink(s.timestamp_ms).onclick());
+      });
+      dot.addEventListener("focus", () => show(s));
+      dot.addEventListener("blur", hide);
+      dot.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); seekLink(s.timestamp_ms).onclick(); }
+      });
+      svg.append(dot, hit);
+    });
+    const kinds = [...new Set(sw.map((s) => s.stroke))];
+    $("speed-legend").replaceChildren(...(kinds.length > 1 ? kinds.map((k) => {    // one series: the text names it
+      const span = document.createElement("span");
+      span.innerHTML = `<i class="k-${k}"></i>`;
+      span.append(KIND_LABEL[k] || k);
+      return span;
+    }) : []));
   }
 
   // ── Swing highlights ─────────────────────────────────────────────────────
@@ -880,6 +965,7 @@
       renderSplit(res);
       renderStrokes(res);
       renderHighlights(res.highlights);
+      renderSpeedChart(res);
       renderTimeline(res);
       POSE = res.pose || null; drawOverlay();
       saveToHistory(res, file.name, mode());
