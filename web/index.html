@@ -87,6 +87,11 @@
                  border-radius: 6px; padding: .3rem .5rem; font-size: .8rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
     .chart-tip b { display: block; }
     .playback { margin-top: .5rem; }
+    .sbs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: .5rem; }
+    .sbs-grid figure { margin: 0; }
+    .sbs-grid video { max-height: 18rem; }
+    .sbs-grid figcaption { color: var(--dim); font-size: .8rem; margin-top: .2rem; }
+    @media (max-width: 34rem) { .sbs-grid { grid-template-columns: 1fr; } }
     input.time { font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: .2rem .4rem; }
     input.note { font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 4px;
                  padding: .1rem .3rem; width: 100%; min-width: 8rem; }
@@ -244,6 +249,14 @@
     <div id="highlights" data-feature="swing_highlights" hidden>
       <p class="status">Worth watching back:</p>
       <ul class="tips" id="highlight-list"></ul>
+      <div id="sbs" data-feature="side_by_side" hidden>
+        <div class="sbs-grid">
+          <figure><video id="sbs-a" muted playsinline></video><figcaption id="sbs-a-cap"></figcaption></figure>
+          <figure><video id="sbs-b" muted playsinline></video><figcaption id="sbs-b-cap"></figcaption></figure>
+        </div>
+        <p class="row"><button class="linkish" id="sbs-replay">Replay</button><button class="linkish" id="sbs-close">Close</button>
+          <span class="keys">Both play at ¼ speed from 1 s before the shot.</span></p>
+      </div>
     </div>
     <div class="table-wrap"><table id="stroke-table"></table></div>
     <ul class="tips" id="stroke-tips"></ul>
@@ -528,11 +541,46 @@
         li.append(label + " ", seekLink(x.timestamp_ms));
         if (x.label) li.append(` (${x.label})`);
       });
+      if ($("sbs") && e.typical && e.outlier) {
+        const b = document.createElement("button");
+        b.className = "linkish"; b.textContent = "Side by side";
+        b.style.marginLeft = ".5rem";
+        b.onclick = () => sideBySide(e.typical, e.outlier, `Most typical ${stroke}`, `Odd one out: ${e.outlier.label}`);
+        li.append(b);
+      }
       return li;
     });
     $("highlight-list").replaceChildren(...items);
     box.hidden = !items.length;
   }
+
+  // ── Side by side: two moments of the same clip, played together ─────────
+  const SBS_RATE = 0.25, SBS_LEN_S = 2;
+  let SBS = null;   // {a, b} timestamps (ms) of the current pair
+  function sideBySide(a, b, capA, capB) {
+    const src = $("player").src;
+    if (!src) return;
+    SBS = { a: a.timestamp_ms, b: b.timestamp_ms };
+    [["sbs-a", capA, SBS.a], ["sbs-b", capB, SBS.b]].forEach(([id, cap, ms]) => {
+      const v = $(id);
+      if (v.src !== src) v.src = src;
+      $(id + "-cap").textContent = `${cap} · ${sec(ms)}`;
+    });
+    $("sbs").hidden = false;
+    playSbs();
+  }
+  function playSbs() {
+    if (!SBS) return;
+    [["sbs-a", SBS.a], ["sbs-b", SBS.b]].forEach(([id, ms]) => {
+      const v = $(id), start = Math.max(0, ms / 1000 - LEAD_S);
+      v.playbackRate = SBS_RATE;
+      v.currentTime = start;
+      v.ontimeupdate = () => { if (v.currentTime >= start + SBS_LEN_S) v.pause(); };   // stop after the shot
+      v.play();
+    });
+  }
+  $("sbs-replay")?.addEventListener("click", playSbs);
+  $("sbs-close")?.addEventListener("click", () => { $("sbs").hidden = true; ["sbs-a", "sbs-b"].forEach((id) => $(id).pause()); });
 
   // ── Timeline ─────────────────────────────────────────────────────────────
   // ── Skeleton overlay ─────────────────────────────────────────────────────

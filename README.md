@@ -268,6 +268,7 @@ everywhere:
 | `session_compare` | Web app: tick two past sessions to compare every metric side by side, marked better / worse (needs `session_history`) |
 | `drill_goals` | Web app: set targets (split-step rate, consistency, recovery, ...) and see which ones each session met |
 | `swing_chart` | Web app: each swing's wrist speed through the clip, coloured by stroke; click a dot to watch it |
+| `side_by_side` | Web app: play your most typical and odd-one-out swing next to each other at ¼ speed (needs `swing_highlights`) |
 | `swing_highlights` | Most typical, fastest and odd-one-out swing of each stroke (with the metric that made it odd), linked to the video |
 | `rally_stats` | Group swings into rallies: shots per rally, longest rally |
 | `ready_position` | Recovery to a ready stance after each shot |

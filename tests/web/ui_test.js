@@ -264,6 +264,8 @@ function chooseFile(dom) {
   check(!doc.getElementById("playback"), "playback controls removed when switched off");
   ({ dom, doc } = await load({ ...ALL, swing_highlights: false }));
   check(!doc.getElementById("highlights"), "highlights removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, side_by_side: false }));
+  check(!doc.getElementById("sbs"), "side by side removed when switched off");
   ({ dom, doc } = await load({ ...ALL, swing_chart: false }));
   check(!doc.getElementById("speed-box"), "speed chart removed when switched off");
   ({ dom, doc } = await load({ ...ALL, session_compare: false }));
@@ -355,6 +357,16 @@ function chooseFile(dom) {
   const hl = doc.getElementById("highlight-list");
   check(!doc.getElementById("highlights").hidden && hl.querySelectorAll("a.ts").length === 3, "highlights listed with 3 seek links");
   check(hl.textContent.includes("odd one out") && hl.textContent.includes("usually 0.43"), "outlier explained: " + hl.textContent);
+  const sbsBtn = [...hl.querySelectorAll("button")].find((b) => b.textContent === "Side by side");
+  check(!!sbsBtn && doc.getElementById("sbs").hidden, "side-by-side button offered");
+  sbsBtn.click();
+  const va = doc.getElementById("sbs-a"), vb = doc.getElementById("sbs-b");
+  check(!doc.getElementById("sbs").hidden && va.playbackRate === 0.25
+        && Math.abs(va.currentTime - Math.max(0, sw[0].timestamp_ms / 1000 - 1)) < 0.01
+        && Math.abs(vb.currentTime - Math.max(0, sw[2].timestamp_ms / 1000 - 1)) < 0.01, "both moments cued at ¼ speed");
+  check(doc.getElementById("sbs-b-cap").textContent.includes("usually 0.43"), "outlier caption explains it");
+  doc.getElementById("sbs-close").click();
+  check(doc.getElementById("sbs").hidden, "close hides the comparison");
   hl.querySelectorAll("a.ts")[2].click();
   check(Math.abs(doc.getElementById("player").currentTime - Math.max(0, sw[2].timestamp_ms / 1000 - 1)) < 0.01, "highlight link seeks");
   check(/Swing speed, late vs early.*−17%/.test(doc.getElementById("stroke-stats").textContent), "fatigue stat shown");
