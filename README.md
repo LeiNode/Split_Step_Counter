@@ -376,6 +376,14 @@ python -m split_step.build_labeled_dataset "assets/split_step_videos/Labeled Tra
     --exclude "assets/split_step_videos/Test_Set"
 ```
 
+Check how often the deployed LSTM fires on frames labelled *not* split step
+(negative-frame false-positive rate, false split steps per minute) and its
+positive recall, per source video:
+
+```
+python -m split_step.eval_negatives assets/csv_files/test_set_labeled.csv
+```
+
 Training happens in `model_experimentation/lstm_model.ipynb`, and every run
 is recorded in `model_experimentation/refinement_log.md`. After retraining,
 update `_HIDDEN_SIZE` and `_THRESHOLD` in `split_step/lstm_counter.py` to
@@ -409,6 +417,7 @@ split_step/                  core package
   live_view_analysis.py       GUI worker for webcam input
   pose_csv_recorder.py        records pose landmarks to CSV
   csv_labeler.py              labels a single pose CSV from hand-entered ranges
+  eval_negatives.py           false-positive rate of the LSTM on labelled negatives
   build_labeled_dataset.py    labels a batch of videos from clip filenames (+ scene-cut detection)
   paths.py                    model file locations
 api/                         FastAPI app (main.py) + Lambda handler + API requirements

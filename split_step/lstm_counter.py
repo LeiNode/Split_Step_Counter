@@ -198,6 +198,7 @@ class LSTMCounter:
         with torch.no_grad():
             logit, self._hidden = self._model(x, self._hidden)
             prob = torch.sigmoid(logit).item()
+        self.last_prob = prob
 
         is_on      = prob >= _THRESHOLD
         self.state = AIRBORNE if is_on else GROUNDED
@@ -217,6 +218,7 @@ class LSTMCounter:
         self.count    = 0
         self.state    = GROUNDED
         self.tracking = False
+        self.last_prob = 0.0       # model probability on the last frame it ran on
         self._active  = False
         self._last_t = 0.0
 
