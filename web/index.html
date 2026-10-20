@@ -149,6 +149,7 @@
     <p class="row" id="downloads" data-feature="report_download" hidden>
       <button class="linkish" id="dl-json">Download report (JSON)</button>
       <button class="linkish" id="dl-csv">Download shots (CSV)</button>
+      <button class="linkish" id="dl-md" data-feature="markdown_report">Download report (Markdown)</button>
       <button class="linkish" id="print-report">Print / save as PDF</button>
     </p>
     <div class="stage" id="stage" hidden>
@@ -986,6 +987,15 @@
     document.title = reportName("pdf").replace(/\.pdf$/, "");   // suggested PDF file name
     window.print();
     document.title = old;
+  });
+  $("dl-md")?.addEventListener("click", async () => {
+    const { pose, ...result } = LAST.res;   // the skeleton isn't part of the report
+    try {
+      const r = await fetch(API_URL + "/v1/report", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                      body: JSON.stringify({ result, title: LAST.file }) });
+      if (!r.ok) throw new Error(`Report failed (${r.status})`);
+      download(reportName("md"), "text/markdown", await r.text());
+    } catch (e) { status("Error: " + e.message, true); }
   });
   $("dl-csv")?.addEventListener("click", () => download(reportName("csv"), "text/csv", toCsv(LAST.res)));
   loadFeatures().then(() => { renderHistory(); buildGoalsForm(); });

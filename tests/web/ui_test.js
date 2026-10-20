@@ -25,6 +25,7 @@ async function load(flags, { uploadsConfigured = false, response = analysis } = 
         if (url.includes("/v1/upload-url"))
           return uploadsConfigured ? json(500, { detail: "boom" }) : json(501, { detail: "Browser uploads are not configured (UPLOAD_BUCKET unset)." });
         if (url.includes("/v1/count")) return json(200, response);
+        if (url.includes("/v1/report")) { calls.push(opts.body); return { ok: true, status: 200, text: async () => "# report\n" }; }
         return json(404, {});
       };
     },
@@ -155,6 +156,10 @@ function chooseFile(dom) {
   dom.window.print = () => { printedAs = doc.title; };
   doc.getElementById("print-report").click();
   check(printedAs === "clip-tennis-report" && doc.title === "Tennis Trainer", "print uses the report name, then restores the title");
+  doc.getElementById("dl-md").click(); await tick();
+  const mdBody = JSON.parse(calls[calls.length - 1]);
+  check(saved && (await readBlob(saved)) === "# report\n" && mdBody.title === "clip.mp4" && !("pose" in mdBody.result),
+        "Markdown report fetched without the skeleton and downloaded");
   doc.getElementById("dl-json").click();
   check(saved && JSON.parse(await readBlob(saved)).count === analysis.count, "JSON report round-trips");
 

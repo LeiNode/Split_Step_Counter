@@ -152,3 +152,17 @@ def test_count_s3_locked_to_issued_keys(fake_aws, bucket, key):
 def test_web_app_served():
     r = client.get("/app/")
     assert r.status_code == 200 and "Tennis Trainer" in r.text
+
+
+def test_markdown_report():
+    import json
+    result = json.loads((REPO / "tests" / "web" / "analysis_fixture.json").read_text(encoding="utf-8"))
+    r = client.post("/v1/report", json={"result": result, "title": "match.mp4"})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/markdown")
+    assert r.text.startswith("# match.mp4\n") and "## Strokes" in r.text
+    assert client.post("/v1/report", json={"result": {"count": 3}}).status_code == 422
+
+
+def test_markdown_report_switch(monkeypatch):
+    monkeypatch.setenv("SPLIT_STEP_FEATURES", "markdown_report=off")
+    assert client.post("/v1/report", json={"result": {}}).status_code == 404

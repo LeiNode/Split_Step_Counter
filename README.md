@@ -99,6 +99,7 @@ uvicorn api.main:app --reload --port 8000
 | GET  | `/v1/features` | — | Which [features](#feature-switches) are on, so UIs can hide the rest. |
 | POST | `/v1/count` | multipart, field `file` = video | Direct upload, limited by `MAX_UPLOAD_MB` (default 200). |
 | POST | `/v1/upload-url` | JSON `{"filename": "match.mp4"}` | Returns a presigned S3 POST (`url`, `fields`, `bucket`, `key`) so a browser can upload directly to S3. Needs `UPLOAD_BUCKET`. |
+| POST | `/v1/report` | JSON `{"result": <count response>, "title": "match.mp4"}` | Returns the result as a readable Markdown report (`text/markdown`), the same as `analyze --report`. Nothing is stored. |
 | POST | `/v1/count/s3` | JSON `{"bucket": "...", "key": "..."}` | Analyses a video in S3. With `UPLOAD_BUCKET` set, it only accepts keys issued by `/v1/upload-url`. |
 
 Both analysis endpoints take these query parameters:
@@ -239,6 +240,7 @@ everywhere:
 | `rally_stats` | Group swings into rallies: shots per rally, longest rally |
 | `ready_position` | Recovery to a ready stance after each shot |
 | `playback_controls` | Web app: slow motion (½×, ¼×), previous/next shot buttons, and keys `[` `]` (shot to shot) and `,` `.` (one frame) |
+| `markdown_report` | `POST /v1/report` and the web app's "Download report (Markdown)" button |
 | `report_download` | Web app: download results as JSON or CSV, or print / save a clean PDF report |
 | `pose_overlay` | Web app: skeleton drawn over the video (API: `include_pose`) |
 
