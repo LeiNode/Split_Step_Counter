@@ -59,6 +59,17 @@ The pose model (~9 MB) downloads automatically into `models/` on first run.
 The LSTM checkpoint (`models/split_step_lstm.pt`) and its normalization stats
 (`models/feat_mean.npy`, `models/feat_std.npy`) are checked into git.
 
+## Command-line tools
+
+| Command | What it does |
+|---|---|
+| `python main.py` | Desktop GUI: video file or live webcam, drills, sound cues |
+| `python -m split_step.analyze clip.mp4 --drill auto` | Analyse one clip; prints JSON. `--report x.md`, `--annotate x.mp4`, `--start` / `--end` |
+| `python -m split_step.batch FOLDER --drill auto` | Analyse a folder into `summary.csv`; `--report-dir` adds per-clip reports and an `index.md` overview |
+| `python -m split_step.watch FOLDER --drill auto` | Analyse new clips as they arrive (e.g. a phone's synced camera folder) |
+| `uvicorn api.main:app --port 8000` | HTTP API + the Tennis Trainer web app at `/app/` |
+| `python -m split_step.eval_negatives CSV` | Model check: false-positive rate on labelled negatives, recall on positives |
+
 ## GUI
 
 ```
