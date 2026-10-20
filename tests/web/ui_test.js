@@ -181,6 +181,13 @@ function chooseFile(dom) {
   doc.getElementById("go").click();
   await tick(); await tick();
   check(rows() === 2, "second analysis adds a row");
+  // Notes: typed into the history table, saved, shown in the chart tooltip
+  const note = doc.querySelector("#history-table input.note");
+  check(!!note, "note box in history rows");
+  note.value = "  windy, new strings  "; note.dispatchEvent(new dom.window.Event("change"));
+  check(JSON.parse(dom.window.localStorage.getItem("tennis-trainer-history-v1"))[0].note === "windy, new strings", "note saved, trimmed");
+  doc.querySelectorAll("#chart circle.pt")[1].dispatchEvent(new dom.window.FocusEvent("focus"));
+  check(doc.getElementById("chart-tip").textContent.includes("windy, new strings"), "note shown in chart tooltip");
   // Compare: tick both sessions; identical results -> "same" everywhere
   const ticks = () => doc.querySelectorAll("#history-table input[type=checkbox]");
   check(ticks().length === 2 && doc.getElementById("compare-table").hidden, "compare boxes, no table yet");
@@ -259,6 +266,10 @@ function chooseFile(dom) {
   check(!doc.getElementById("speed-box"), "speed chart removed when switched off");
   ({ dom, doc } = await load({ ...ALL, session_compare: false }));
   check(!doc.getElementById("compare"), "compare removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, session_notes: false }));
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  check(!doc.querySelector("#history-table input.note") && !doc.getElementById("history-table").textContent.includes("Notes"),
+        "notes column removed when switched off");
   doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "]" }));   // must not throw
   ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
   check([...doc.querySelectorAll("#model option")].map((o) => o.value).join() === "lstm", "disabled model removed");

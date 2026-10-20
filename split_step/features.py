@@ -52,6 +52,7 @@ DEFAULTS: dict[str, tuple[bool, str]] = {
     "drill_goals":         (True,  "Web app: set targets and see which ones each session met"),
     "session_history":     (True,  "Web app: keep past results in the browser and show progress"),
     "history_transfer":    (True,  "Web app: export history to a file and import it in another browser"),
+    "session_notes":       (True,  "Web app: add a note to each saved session (shown in history, chart and compare)"),
     "session_compare":     (True,  "Web app: compare two past sessions side by side"),
 }
 
@@ -68,6 +69,7 @@ PARENTS = {
     "swing_chart": ("stroke_training",),
     "session_compare": ("session_history",),
     "history_transfer": ("session_history",),
+    "session_notes": ("session_history",),
     "rep_target": ("stroke_training",),
     "practice_plan": ("coach_summary",),
     "ready_position": ("stroke_training",),
