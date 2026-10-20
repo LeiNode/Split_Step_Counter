@@ -210,6 +210,8 @@ python -m split_step.batch "my clips" --drill auto --out summary.csv --json-dir 
 ```
 
 A clip that can't be read gets a row with its error; the rest still run.
+With `--report-dir`, `index.md` there gives a one-page overview: a row per
+clip linking its report, and the focus points that came up in the most clips.
 
 To analyse clips automatically as they arrive (e.g. a phone's synced camera
 folder), leave this running; each new clip gets `clip.report.md` and

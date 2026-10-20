@@ -38,3 +38,18 @@ def test_summary_row_flattens_sections():
     assert r["landing_knee_angle"] == 128.0 and r["forehand_consistency"] == 64 and r["serve_consistency"] is None
     assert r["median_recovery_s"] == 1.23 and r["longest_rally"] == 5 and r["top_tip"] == "Bend your knees."
     assert set(r) == set(COLUMNS)
+
+
+def test_index_overview():
+    from split_step.batch import index_markdown
+    tip_a = "Only 1 of 6 shots had a split step before them. Make it a habit."
+    tip_b = "Only 3 of 9 shots had a split step before them. Make it a habit."
+    rows = [{**dict.fromkeys(COLUMNS), "file": "day 1.mp4", "duration_s": 61.0, "swings": 6, "forehand_consistency": 55,
+             "shots_with_split_step": 0.167, "error": None},
+            {**dict.fromkeys(COLUMNS), "file": "day2.mp4", "duration_s": 90.0, "swings": 9, "error": None},
+            {**dict.fromkeys(COLUMNS), "file": "bad.mov", "error": "Could not open the file as a video."}]
+    md = index_markdown(rows, {"day 1.mp4": [tip_a, "Forehand: keep your head still."], "day2.mp4": [tip_b]})
+    assert "2 clips analysed, 1 could not be read." in md
+    assert "| [day 1.mp4](day%201.md) | 61 s | – | 6 | 55/100 | 17% | – |" in md
+    assert "- **2 of 2 clips**: Only 1 of 6 shots" in md and "(drill: Split on the feed)" in md   # grouped by drill
+    assert "- bad.mov: Could not open" in md
