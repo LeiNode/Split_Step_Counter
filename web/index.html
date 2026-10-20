@@ -350,7 +350,8 @@
     if (serve) cols.push(["Reach", (s) => fmt(s.contact_reach_m, 2, " m")], ["Toss", (s) => fmt(s.toss_height_m, 2, " m")], ["Toss release (side)", (s) => fmt(s.toss_lateral_m, 2, " m")],
                          ["Elbow", (s) => fmt(s.elbow_extension, 0, "°")], ["Trophy knee", (s) => fmt(s.trophy_knee_angle, 0, "°")]);
     else cols.push(["Contact height", (s) => fmt(s.contact_height)], ["Shoulder turn", (s) => fmt(s.shoulder_turn_deg, 0, "°")],
-                   ["Finish", (s) => fmt(s.finish_above_shoulder_m, 2, " m")], ["Knee load", (s) => fmt(s.load_knee_angle, 0, "°")]);
+                   ["Finish", (s) => fmt(s.finish_above_shoulder_m, 2, " m")], ["Knee load", (s) => fmt(s.load_knee_angle, 0, "°")],
+                   ["Head movement", (s) => s.head_movement_m == null ? "–" : fmt(s.head_movement_m * 100, 0, " cm")]);
     if (t) cols.push(["Split step before", (s) => s.split_step_lead_ms == null ? "none" : fmt(s.split_step_lead_ms / 1000, 1, " s")]);
     fillTable($("stroke-table"), cols, st.swings);
     fillTips($("stroke-tips"), [...st.tips, ...(t ? t.tips : []), ...(res.rallies ? res.rallies.summary.tips : []),

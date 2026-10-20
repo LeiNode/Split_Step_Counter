@@ -58,6 +58,12 @@ TIP_CONTACT_HIGH    = 1.10
 TIP_SHOULDER_TURN   = 35    # degrees of shoulder rotation through the stroke
 TIP_GROUND_KNEE     = 160   # deepest knee angle while loading
 TIP_CONSISTENCY     = 50    # consistency score below this -> tip
+# Head movement around contact (nose, world x/y, max distance from its mean
+# over HEAD_WINDOW_MS around contact). Pro practice footage (Sinner, side view,
+# 59 swings, 2026-10-19): median 0.06 m, 90th percentile 0.10 m. That's the
+# floor from body rotation + pose noise; the tip fires well above it.
+HEAD_WINDOW_MS      = (-200, 100)
+TIP_HEAD_MOVEMENT   = 0.15  # m
 
 # Shot-to-shot spread (std) at which a metric scores 0 for consistency. Speed is
 # relative (std / mean); the rest are absolute, in each metric's own unit.
@@ -255,6 +261,13 @@ def swing_metrics(track: PoseTrack, i: int, stroke: str, hand: str, speed: float
         h = np.degrees(np.unwrap(2 * np.array(headings)) / 2)
         turn = round(float(min(h.max() - h.min(), 180.0)), 1)
 
+    # Head stillness: how far the nose wanders around contact. World coords are
+    # hip-relative, so running doesn't count; depth (z) is left out as too noisy.
+    nose = np.array([track.world[k, NOSE, :2] for k in _frames(track, track.ts_ms[contact], *HEAD_WINDOW_MS)
+                     if track.visible(k, (NOSE,))])
+    head = (round(float(np.max(np.linalg.norm(nose - nose.mean(0), axis=1))), 3)
+            if len(nose) >= 4 else None)
+
     # Follow-through: how far above the shoulders the hitting wrist finishes
     finish = _nanmax([float(track.world[k, shoulder, 1] - track.world[k, wrist, 1])
                       for k in _frames(track, t, 0, 600) if track.visible(k, (shoulder, wrist))])
@@ -263,6 +276,7 @@ def swing_metrics(track: PoseTrack, i: int, stroke: str, hand: str, speed: float
         "shoulder_turn_deg": turn,
         "finish_above_shoulder_m": None if not np.isfinite(finish) else round(finish, 2),
         "load_knee_angle": load_knee,
+        "head_movement_m": head,
     })
     return m
 
@@ -322,8 +336,9 @@ def stroke_tips(stroke: str, swings: list[dict]) -> list[str]:
             tips.append(f"Serve: your toss release point moves around (±{np.std(lat) * 100:.0f} cm sideways). "
                         "Release the ball from the same spot every time for a repeatable toss.")
     else:
-        c, turn, f, k = (_median(swings, x) for x in
-                         ("contact_height", "shoulder_turn_deg", "finish_above_shoulder_m", "load_knee_angle"))
+        c, turn, f, k, head = (_median(swings, x) for x in
+                               ("contact_height", "shoulder_turn_deg", "finish_above_shoulder_m",
+                                "load_knee_angle", "head_movement_m"))
         if c is not None and c < TIP_CONTACT_LOW:
             tips.append(f"{name}: you're making contact low. Bend your knees and get down to the ball.")
         if c is not None and c > TIP_CONTACT_HIGH:
@@ -334,6 +349,9 @@ def stroke_tips(stroke: str, swings: list[dict]) -> list[str]:
             tips.append(f"{name}: finish your follow-through higher, over the shoulder.")
         if k is not None and k > TIP_GROUND_KNEE:
             tips.append(f"{name}: load your legs. Your knees stay almost straight.")
+        if head is not None and head > TIP_HEAD_MOVEMENT and len(swings) >= CONSISTENCY_MIN_SWINGS:
+            tips.append(f"{name}: keep your head still through contact (it moves ~{head * 100:.0f} cm). "
+                        "Watch the contact point until the ball is gone.")
     if not tips:
         tips.append(f"{name}: technique metrics look solid. Keep it up!")
     return tips

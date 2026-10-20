@@ -140,3 +140,17 @@ def test_serve_toss_lateral_and_tip():
     assert s["toss_lateral_m"] < -0.3
     wobbly = [{"peak_wrist_speed": 10.0, "toss_lateral_m": x} for x in (-0.3, 0.0, 0.3, -0.25)]
     assert any("toss release point moves around" in t for t in stroke_tips("serve", wobbly))
+
+
+def test_head_movement_at_contact():
+    from split_step.strokes import CONTACT_LEAD_MS, stroke_tips, swing_metrics
+    w = _body(90)
+    assert swing_metrics(_track(w), 45, "forehand", "right", 10.0)["head_movement_m"] < 0.01
+    contact = 45 - round(CONTACT_LEAD_MS * FPS / 1000)
+    w[contact - 3:contact + 4, NOSE, 0] += np.linspace(0, 0.4, 7)       # head jerks 40 cm sideways
+    assert swing_metrics(_track(w), 45, "forehand", "right", 10.0)["head_movement_m"] > 0.15
+    still = [{"peak_wrist_speed": 10.0, "head_movement_m": 0.05}] * 3
+    moving = [{"peak_wrist_speed": 10.0, "head_movement_m": 0.25}] * 3
+    assert not any("head still" in t for t in stroke_tips("forehand", still))
+    assert any("head still" in t for t in stroke_tips("backhand", moving))
+    assert not any("head still" in t for t in stroke_tips("backhand", moving[:2]))   # too few swings
