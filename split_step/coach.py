@@ -5,7 +5,7 @@ Every analysis section emits its own tips; this collects them into one
 prioritised list for the top of a report. Order of importance:
 
   1. camera  — a bad camera angle makes every other number less reliable
-  2. habits  — split step before shots, recovery, footwork, split-step quality
+  2. habits  — split step before shots, recovery, footwork, fatigue, split-step quality
   3. technique — per-stroke tips, then rally consistency
 
 Within a section the original order is kept. Tips that report something
@@ -20,6 +20,7 @@ _SOURCES = [
     ("timing",   lambda r: r.get("tips", [])),
     ("recovery", lambda r: r.get("tips", [])),
     ("footwork", lambda r: r.get("tips", [])),
+    ("fatigue",  lambda r: r.get("tips", [])),
     ("session",  lambda r: r.get("tips", [])),
     ("strokes",  lambda r: r.get("tips", [])),
     ("rallies",  lambda r: r.get("summary", {}).get("tips", [])),

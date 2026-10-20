@@ -11,7 +11,7 @@ let failures = 0;
 const check = (cond, msg) => { console.log((cond ? "ok   " : "FAIL ") + msg); if (!cond) failures++; };
 const tick = () => new Promise((r) => setTimeout(r, 30));
 
-async function load(flags, { uploadsConfigured = false } = {}) {
+async function load(flags, { uploadsConfigured = false, response = analysis } = {}) {
   const calls = [];
   const dom = new JSDOM(html, {
     url: "http://localhost:8000/app/", runScripts: "dangerously", pretendToBeVisual: true,
@@ -24,7 +24,7 @@ async function load(flags, { uploadsConfigured = false } = {}) {
         if (url.endsWith("/v1/features")) return json(200, { features: flags });
         if (url.includes("/v1/upload-url"))
           return uploadsConfigured ? json(500, { detail: "boom" }) : json(501, { detail: "Browser uploads are not configured (UPLOAD_BUCKET unset)." });
-        if (url.includes("/v1/count")) return json(200, analysis);
+        if (url.includes("/v1/count")) return json(200, response);
         return json(404, {});
       };
     },
@@ -180,6 +180,14 @@ function chooseFile(dom) {
   doc.getElementById("go").click();
   await tick(); await tick();
   check(doc.getElementById("status").textContent.includes("boom"), "real upload errors shown: " + doc.getElementById("status").textContent);
+
+  // 6. Fatigue trend: late-vs-early change shown, its tip listed
+  const fatigue = { measured: true, tips: ["You fade late in the session: swing speed (-17%) ..."],
+                    metrics: { peak_wrist_speed: { early: 12, late: 10, change: -0.167, dropped: true } } };
+  ({ dom, doc } = await load(ALL, { response: { ...analysis, fatigue } }));
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  check(/Swing speed, late vs early.*−17%/.test(doc.getElementById("stroke-stats").textContent), "fatigue stat shown");
+  check(doc.getElementById("stroke-tips").textContent.includes("You fade late"), "fatigue tip listed");
 
   console.log(failures ? `${failures} FAILED` : "ALL PASSED");
   process.exit(failures ? 1 : 0);

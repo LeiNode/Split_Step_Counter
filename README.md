@@ -21,6 +21,9 @@ analyses run on them:
   (knees bent, racket in front with both hands, feet apart) after each shot.
 - **Footwork.** Counts steps: steps per minute, and small adjustment steps
   between shots in a rally.
+- **Fatigue trend.** On sessions of 2+ minutes, compares the first third
+  with the last: hop height, knee bend, swing speed and recovery time, and
+  flags the ones that dropped off.
 - **Rallies.** Groups swings into rallies (shots per rally, longest rally).
 - **Split step → shot timing.** Shows which shots had a split step
   0.4–2.5 s before them. Hops that happen during a swing are flagged, not
@@ -194,6 +197,7 @@ everywhere:
 | `split_step_metrics` | Per-split-step quality metrics and session summary |
 | `coach_summary` | Prioritised summary: the top 3 things to work on, plus strengths |
 | `footwork` | Step counting: steps per minute, adjustment steps between shots |
+| `fatigue_trend` | Compare the start and end of sessions of 2+ minutes: does the player fade? |
 | `camera_view_check` | Detect the camera angle; warn when it's one the model handles poorly |
 | `stroke_training` | All stroke training (parent of the four below) |
 | `forehand_training`, `backhand_training`, `serve_training` | Each drill |
@@ -352,6 +356,13 @@ split_step/                  core package
   pose_track.py               whole-video landmarks as numpy arrays
   tennis_metrics.py           split-step quality metrics, session summary, tips
   strokes.py                  swing detection + forehand/backhand/serve training
+  timing.py                   links split steps to the shots that follow
+  rallies.py                  groups swings into rallies
+  ready_position.py           recovery to a ready stance after each shot
+  footwork.py                 step counting, adjustment steps between shots
+  fatigue.py                  early vs late session comparison
+  camera_view.py              camera-angle detection
+  coach.py                    prioritised coach's summary of all tips
   features.py                 feature switches
   app.py                      tkinter GUI
   video_analysis.py           GUI worker for video files

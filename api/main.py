@@ -141,7 +141,8 @@ class AnalysisOptions:
                            rally_stats=flags["rally_stats"], include_pose=include_pose,
                            ready_position=flags["ready_position"],
                            camera_view_check=flags["camera_view_check"],
-                           footwork=flags["footwork"], coach=flags["coach_summary"])
+                           footwork=flags["footwork"], fatigue=flags["fatigue_trend"],
+                           coach=flags["coach_summary"])
 
 
 class CountResult(BaseModel):
@@ -157,6 +158,7 @@ class CountResult(BaseModel):
     recovery: dict | None = None
     camera: dict | None = None
     footwork: dict | None = None
+    fatigue: dict | None = None
     coach: dict | None = None
     frames: int
     frames_analysed: int | None = None

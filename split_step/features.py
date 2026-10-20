@@ -24,6 +24,7 @@ DEFAULTS: dict[str, tuple[bool, str]] = {
     "split_step_counting": (True,  "Count split steps (the core feature)"),
     "coach_summary":       (True,  "Prioritised summary: top things to work on + strengths"),
     "footwork":            (True,  "Step counting: steps per minute, adjustment steps between shots"),
+    "fatigue_trend":       (True,  "Compare the start and end of long sessions: does the player fade?"),
     "camera_view_check":   (True,  "Detect the camera angle and warn when it's one the model handles poorly"),
     "split_step_metrics":  (True,  "Per-split-step hop height, knee bend, stance width + session summary"),
     "stroke_training":     (True,  "Swing detection and stroke feedback (master switch for the three below)"),

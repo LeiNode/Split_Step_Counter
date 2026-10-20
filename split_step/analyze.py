@@ -30,6 +30,7 @@ from .strokes import DRILLS, HANDS, stroke_report
 from .tennis_metrics import session_summary, split_step_quality
 from .camera_view import camera_report
 from .coach import coach_summary
+from .fatigue import fatigue_report
 from .footwork import footwork_report
 from .rallies import find_rallies
 from .ready_position import recovery
@@ -65,7 +66,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                   split_step_timing: bool = True, rally_stats: bool = True,
                   include_pose: bool = False, ready_position: bool = True,
                   camera_view_check: bool = True, footwork: bool = True,
-                  coach: bool = True, max_fps: float | None = 30.0,
+                  coach: bool = True, fatigue: bool = True, max_fps: float | None = 30.0,
                   max_seconds: float | None = None) -> dict:
     """Analyse a video file.
 
@@ -84,6 +85,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     ready_position     — with a drill: recovery to a ready stance after each shot
     camera_view_check  — report the camera angle (camera_view.py)
     footwork           — count steps (footwork.py)
+    fatigue            — compare the first and last third of the session (fatigue.py)
     coach              — prioritised summary of all tips (coach.py)
     max_fps            — analyse at most this many frames per second (None = all).
                          The LSTM was trained on ~30 fps footage and the rules
@@ -115,6 +117,9 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     With footwork:
         footwork — steps, steps per minute; with a drill also adjustment steps
                    between shots (adds swings[].steps_before)
+    With fatigue:
+        fatigue — early vs late medians of hop height, knee bend, swing speed,
+                  recovery; only measured on sessions of 2+ minutes
     With coach:
         coach   — {focus: top tips to work on, strengths, more}
     With camera_view_check:
@@ -212,6 +217,9 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
         result["camera"] = camera_report(pose_track)
     if footwork:
         result["footwork"] = footwork_report(pose_track, result["strokes"]["swings"] if drill else None)
+    if fatigue:
+        result["fatigue"] = fatigue_report(result.get("events"), result["strokes"]["swings"] if drill else None,
+                                           last_ts_ms)
     if coach:
         result["coach"] = coach_summary(result)
 
