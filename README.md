@@ -211,6 +211,14 @@ python -m split_step.batch "my clips" --drill auto --out summary.csv --json-dir 
 
 A clip that can't be read gets a row with its error; the rest still run.
 
+To analyse clips automatically as they arrive (e.g. a phone's synced camera
+folder), leave this running; each new clip gets `clip.report.md` and
+`clip.report.json` next to it once it has finished syncing:
+
+```
+python -m split_step.watch "C:/Users/me/OneDrive/Pictures/Camera Roll" --drill auto
+```
+
 ### Feature switches
 
 Every major feature has an on/off switch. A switched-off feature disappears
@@ -401,6 +409,7 @@ split_step/                  core package
   lstm_counter.py             SplitStepLSTM model + LSTMCounter (same interface as the detector)
   report.py                   a result as a Markdown report
   annotate.py                 the analysis drawn onto a copy of the video
+  watch.py                    analyse new clips as they arrive in a folder
   batch.py                    analyse a folder of clips into one summary CSV
   analyze.py                  headless "video file -> results" used by the API
   pose_track.py               whole-video landmarks as numpy arrays
