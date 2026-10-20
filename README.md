@@ -189,7 +189,10 @@ match clip, analysing every frame added 5 swings, at least 3 of them false.
 You can analyse without the server too:
 `python -m split_step.analyze practice.mp4 --model rules --drill serve`.
 Add `--report session.md` for a readable Markdown report (coach's summary,
-practice plan, tables of split steps and swings) to share with a coach.
+practice plan, tables of split steps and swings) to share with a coach, and
+`--annotate annotated.mp4` for a copy of the video with the skeleton, a
+"SPLIT STEP" banner, each stroke with its wrist speed, and running counts
+drawn on.
 
 To analyse a whole folder of clips into one spreadsheet (one row per clip:
 split steps, consistency, recovery, camera view, top tip, ...):
@@ -374,6 +377,7 @@ split_step/                  core package
   detector.py                 constants, pose helpers, rule-based SplitStepDetector, GUI worker base
   lstm_counter.py             SplitStepLSTM model + LSTMCounter (same interface as the detector)
   report.py                   a result as a Markdown report
+  annotate.py                 the analysis drawn onto a copy of the video
   batch.py                    analyse a folder of clips into one summary CSV
   analyze.py                  headless "video file -> results" used by the API
   pose_track.py               whole-video landmarks as numpy arrays

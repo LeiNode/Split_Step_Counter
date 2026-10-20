@@ -14,7 +14,7 @@ is computed from the track afterwards.
 Usage
 -----
     python -m split_step.analyze VIDEO [--model lstm|rules] [--drill auto|forehand|backhand|serve]
-                                 [--report session.md]
+                                 [--report session.md] [--annotate annotated.mp4]
 
     from split_step.analyze import analyze_video
     result = analyze_video("clip.mp4", model="rules", drill="forehand")
@@ -260,9 +260,16 @@ if __name__ == "__main__":
     parser.add_argument("--max-fps", type=float, default=30.0,
                         help="Analyse at most this many frames per second; 0 = every frame (default 30)")
     parser.add_argument("--report", metavar="PATH.md", help="Also write a readable Markdown report here")
+    parser.add_argument("--annotate", metavar="PATH.mp4",
+                        help="Also write a copy of the video with the skeleton, split steps and swings drawn on")
     args = parser.parse_args()
     result = analyze_video(args.video, args.model, require_full_pose=not args.allow_partial_pose,
-                           drill=args.drill, hand=args.hand, max_fps=args.max_fps or None)
+                           drill=args.drill, hand=args.hand, max_fps=args.max_fps or None,
+                           include_pose=bool(args.annotate))
+    if args.annotate:
+        from .annotate import annotate_video
+        annotate_video(args.video, result, args.annotate)
+        del result["pose"]   # bulky; it's in the video now
     if args.report:
         import os
         from .report import to_markdown
