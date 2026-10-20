@@ -32,6 +32,7 @@ from .camera_view import camera_report
 from .coach import coach_summary
 from .fatigue import fatigue_report
 from .footwork import footwork_report
+from .highlights import stroke_highlights
 from .rallies import find_rallies
 from .ready_position import recovery
 from .timing import link_split_steps
@@ -66,7 +67,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                   split_step_timing: bool = True, rally_stats: bool = True,
                   include_pose: bool = False, ready_position: bool = True,
                   camera_view_check: bool = True, footwork: bool = True,
-                  coach: bool = True, fatigue: bool = True, max_fps: float | None = 30.0,
+                  coach: bool = True, fatigue: bool = True,
+                  highlights: bool = True, max_fps: float | None = 30.0,
                   max_seconds: float | None = None) -> dict:
     """Analyse a video file.
 
@@ -85,6 +87,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     ready_position     — with a drill: recovery to a ready stance after each shot
     camera_view_check  — report the camera angle (camera_view.py)
     footwork           — count steps (footwork.py)
+    highlights         — with a drill: typical / fastest / odd-one-out swing per stroke
     fatigue            — compare the first and last third of the session (fatigue.py)
     coach              — prioritised summary of all tips (coach.py)
     max_fps            — analyse at most this many frames per second (None = all).
@@ -114,6 +117,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     With a drill and ready_position:
         recovery — recovery(): share of shots recovered from + median time;
                    adds swings[].recovery_ms
+    With a drill and highlights:
+        highlights — stroke_highlights(): swings worth watching back, per stroke
     With footwork:
         footwork — steps, steps per minute; with a drill also adjustment steps
                    between shots (adds swings[].steps_before)
@@ -211,6 +216,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
             result["rallies"] = find_rallies(result["strokes"]["swings"])
         if ready_position:
             result["recovery"] = recovery(pose_track, result["strokes"]["swings"])
+        if highlights:
+            result["highlights"] = stroke_highlights(result["strokes"]["swings"])
     if include_pose:
         result["pose"] = pose_track.export_skeleton()
     if camera_view_check:

@@ -183,6 +183,8 @@ function chooseFile(dom) {
   check(!doc.getElementById("downloads"), "download buttons removed when switched off");
   ({ dom, doc } = await load({ ...ALL, playback_controls: false }));
   check(!doc.getElementById("playback"), "playback controls removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, swing_highlights: false }));
+  check(!doc.getElementById("highlights"), "highlights removed when switched off");
   doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "]" }));   // must not throw
   ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
   check([...doc.querySelectorAll("#model option")].map((o) => o.value).join() === "lstm", "disabled model removed");
@@ -208,8 +210,16 @@ function chooseFile(dom) {
   // 6. Fatigue trend: late-vs-early change shown, its tip listed
   const fatigue = { measured: true, tips: ["You fade late in the session: swing speed (-17%) ..."],
                     metrics: { peak_wrist_speed: { early: 12, late: 10, change: -0.167, dropped: true } } };
-  ({ dom, doc } = await load(ALL, { response: { ...analysis, fatigue } }));
+  const sw = analysis.strokes.swings;
+  const highlights = { forehand: { typical: { timestamp_ms: sw[0].timestamp_ms }, fastest: { timestamp_ms: sw[1].timestamp_ms },
+                                   outlier: { timestamp_ms: sw[2].timestamp_ms, label: "contact height 1.10, usually 0.43" } } };
+  ({ dom, doc } = await load(ALL, { response: { ...analysis, fatigue, highlights } }));
   chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  const hl = doc.getElementById("highlight-list");
+  check(!doc.getElementById("highlights").hidden && hl.querySelectorAll("a.ts").length === 3, "highlights listed with 3 seek links");
+  check(hl.textContent.includes("odd one out") && hl.textContent.includes("usually 0.43"), "outlier explained: " + hl.textContent);
+  hl.querySelectorAll("a.ts")[2].click();
+  check(Math.abs(doc.getElementById("player").currentTime - Math.max(0, sw[2].timestamp_ms / 1000 - 1)) < 0.01, "highlight link seeks");
   check(/Swing speed, late vs early.*−17%/.test(doc.getElementById("stroke-stats").textContent), "fatigue stat shown");
   check(doc.getElementById("stroke-tips").textContent.includes("You fade late"), "fatigue tip listed");
 

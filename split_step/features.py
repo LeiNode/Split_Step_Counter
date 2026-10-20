@@ -33,6 +33,7 @@ DEFAULTS: dict[str, tuple[bool, str]] = {
     "serve_training":      (True,  "Serve drill"),
     "auto_stroke_detection": (True, "'auto' drill: classify each swing (forehand/backhand is experimental)"),
     "ready_position":      (True,  "Recovery to a ready stance after each shot"),
+    "swing_highlights":    (True,  "Point out the most typical, fastest and odd-one-out swing of each stroke"),
     "rally_stats":         (True,  "Group swings into rallies: shots per rally, longest rally"),
     "split_step_timing":   (True,  "Link split steps to the following shots (needs counting + stroke training)"),
     "lstm_model":          (True,  "LSTM split-step model"),
@@ -56,6 +57,7 @@ PARENTS = {
     "split_step_metrics": ("split_step_counting",),
     "split_step_timing": ("split_step_counting", "stroke_training"),
     "rally_stats": ("stroke_training",),
+    "swing_highlights": ("stroke_training",),
     "ready_position": ("stroke_training",),
 }
 

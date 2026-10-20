@@ -142,6 +142,7 @@ class AnalysisOptions:
                            ready_position=flags["ready_position"],
                            camera_view_check=flags["camera_view_check"],
                            footwork=flags["footwork"], fatigue=flags["fatigue_trend"],
+                           highlights=flags["swing_highlights"],
                            coach=flags["coach_summary"])
 
 
@@ -159,6 +160,7 @@ class CountResult(BaseModel):
     camera: dict | None = None
     footwork: dict | None = None
     fatigue: dict | None = None
+    highlights: dict | None = None
     coach: dict | None = None
     frames: int
     frames_analysed: int | None = None

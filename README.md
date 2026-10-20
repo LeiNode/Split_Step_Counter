@@ -15,6 +15,8 @@ analyses run on them:
   - forehand / backhand: contact height, shoulder turn, follow-through, knee load,
     head stillness through contact, preparation timing (how early the shoulders turn)
   - serve: reach, toss height, elbow extension, trophy-position knee bend
+  - **highlights**: links to your most typical, fastest and odd-one-out
+    swing of each stroke
   - a **consistency score** (0–100) per stroke: how repeatable the swings
     are. Pros score about 55–70 on practice footage, because measurement
     noise counts toward the spread.
@@ -220,6 +222,7 @@ everywhere:
 | `live_view` | Webcam button in the desktop GUI |
 | `session_history` | Web app: progress table and chart of past sessions, saved in the browser |
 | `drill_goals` | Web app: set targets (split-step rate, consistency, recovery, ...) and see which ones each session met |
+| `swing_highlights` | Most typical, fastest and odd-one-out swing of each stroke (with the metric that made it odd), linked to the video |
 | `rally_stats` | Group swings into rallies: shots per rally, longest rally |
 | `ready_position` | Recovery to a ready stance after each shot |
 | `playback_controls` | Web app: slow motion (½×, ¼×), previous/next shot buttons, and keys `[` `]` (shot to shot) and `,` `.` (one frame) |
@@ -374,6 +377,7 @@ split_step/                  core package
   rallies.py                  groups swings into rallies
   ready_position.py           recovery to a ready stance after each shot
   footwork.py                 step counting, adjustment steps between shots
+  highlights.py               typical / fastest / odd-one-out swing per stroke
   fatigue.py                  early vs late session comparison
   camera_view.py              camera-angle detection
   coach.py                    prioritised coach's summary of all tips

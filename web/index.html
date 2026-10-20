@@ -177,6 +177,10 @@
   <section class="card" id="stroke-results" hidden>
     <h2 id="stroke-title">Strokes</h2>
     <div class="stats" id="stroke-stats"></div>
+    <div id="highlights" data-feature="swing_highlights" hidden>
+      <p class="status">Worth watching back:</p>
+      <ul class="tips" id="highlight-list"></ul>
+    </div>
     <div class="table-wrap"><table id="stroke-table"></table></div>
     <ul class="tips" id="stroke-tips"></ul>
   </section>
@@ -359,6 +363,25 @@
                                  ...(res.recovery ? res.recovery.tips : []),
                                  ...(res.footwork ? res.footwork.tips : []),
                                  ...(res.fatigue ? res.fatigue.tips : [])]);
+  }
+
+  // ── Swing highlights ─────────────────────────────────────────────────────
+  function renderHighlights(h) {
+    const box = $("highlights");
+    if (!box) return;
+    const items = Object.entries(h || {}).map(([stroke, e]) => {
+      const li = document.createElement("li");
+      li.append(KIND_LABEL[stroke] + ": ");
+      const parts = [["most typical", e.typical], ["fastest", e.fastest], ["odd one out", e.outlier]].filter(([, x]) => x);
+      parts.forEach(([label, x], i) => {
+        if (i) li.append(" · ");
+        li.append(label + " ", seekLink(x.timestamp_ms));
+        if (x.label) li.append(` (${x.label})`);
+      });
+      return li;
+    });
+    $("highlight-list").replaceChildren(...items);
+    box.hidden = !items.length;
   }
 
   // ── Timeline ─────────────────────────────────────────────────────────────
@@ -745,6 +768,7 @@
       $("camera-notice").hidden = !camTips.length;
       renderSplit(res);
       renderStrokes(res);
+      renderHighlights(res.highlights);
       renderTimeline(res);
       POSE = res.pose || null; drawOverlay();
       saveToHistory(res, file.name, mode());
