@@ -78,14 +78,28 @@
     .keys { color: var(--dim); font-size: .8rem; }
     kbd { font: inherit; font-size: .75rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 .3rem; }
     [hidden] { display: none !important; }
+    /* Printing (or "Save as PDF") gives a clean results report: no controls or video */
+    @media print {
+      :root { --bg:#fff; --card:#fff; --ink:#000; --dim:#444; --line:#ccc; --accent:#1d5e37; --warn:#8a4a10; }
+      body { font-size: 11pt; }
+      main { max-width: none; padding: 0; }
+      .no-print, button, select, input, details, #stage, #playback, #timeline-box, #compare, #chart-wrap, #chart-empty,
+      label[data-feature="pose_overlay"], .modes, #model-picker, label[data-feature="stroke_training"] { display: none !important; }
+      .card { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: .5rem 0; }
+      h2 { break-after: avoid; }
+      tr { break-inside: avoid; }
+      table.has-compare tr > :first-child { display: none; }
+      .table-wrap { overflow: visible; }
+      a.ts { color: inherit; text-decoration: none; }
+    }
   </style>
 </head>
 <body>
 <main>
   <h1>Tennis Trainer</h1>
-  <p class="sub">Upload a clip. Get split-step counts, stroke metrics and coaching tips.</p>
+  <p class="sub no-print">Upload a clip. Get split-step counts, stroke metrics and coaching tips.</p>
 
-  <section class="card">
+  <section class="card no-print">
     <h2>1. What are you practising?</h2>
     <div class="modes" id="modes">
       <label data-feature="split_step_counting"><input type="radio" name="mode" value="split" checked>Split steps</label>
@@ -112,7 +126,7 @@
     </div>
   </section>
 
-  <section class="card">
+  <section class="card no-print">
     <h2>2. Upload your video</h2>
     <div class="row">
       <input type="file" id="video" accept="video/*">
@@ -122,6 +136,7 @@
     <p class="row" id="downloads" data-feature="report_download" hidden>
       <button class="linkish" id="dl-json">Download report (JSON)</button>
       <button class="linkish" id="dl-csv">Download shots (CSV)</button>
+      <button class="linkish" id="print-report">Print / save as PDF</button>
     </p>
     <div class="stage" id="stage" hidden>
       <video id="player" controls playsinline></video>
@@ -168,7 +183,7 @@
 
   <section class="card" id="history" data-feature="session_history" hidden>
     <h2>Your progress <span class="tag">saved in this browser</span></h2>
-    <label>Chart <select id="chart-metric"></select></label>
+    <label class="no-print">Chart <select id="chart-metric"></select></label>
     <div class="chart-wrap" id="chart-wrap">
       <svg id="chart" role="img" aria-label="Progress chart"></svg>
       <div class="chart-tip" id="chart-tip" hidden></div>
@@ -663,6 +678,7 @@
       });
       return c;
     };
+    $("history-table").classList.toggle("has-compare", !!$("compare"));
     fillTable($("history-table"), [
       ...($("compare") ? [["Compare", pick]] : []),
       ["Date", (h) => new Date(h.date).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })],
@@ -862,6 +878,12 @@
   $("clear-history")?.addEventListener("click", () => { writeHistory([]); renderHistory(); });
   $("chart-metric")?.addEventListener("change", renderChart);
   $("dl-json")?.addEventListener("click", () => download(reportName("json"), "application/json", JSON.stringify(LAST.res, null, 2)));
+  $("print-report")?.addEventListener("click", () => {
+    const old = document.title;
+    document.title = reportName("pdf").replace(/\.pdf$/, "");   // suggested PDF file name
+    window.print();
+    document.title = old;
+  });
   $("dl-csv")?.addEventListener("click", () => download(reportName("csv"), "text/csv", toCsv(LAST.res)));
   loadFeatures().then(() => { renderHistory(); buildGoalsForm(); });
 </script>

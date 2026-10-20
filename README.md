@@ -231,7 +231,7 @@ everywhere:
 | `rally_stats` | Group swings into rallies: shots per rally, longest rally |
 | `ready_position` | Recovery to a ready stance after each shot |
 | `playback_controls` | Web app: slow motion (½×, ¼×), previous/next shot buttons, and keys `[` `]` (shot to shot) and `,` `.` (one frame) |
-| `report_download` | Web app: download results as JSON or CSV |
+| `report_download` | Web app: download results as JSON or CSV, or print / save a clean PDF report |
 | `pose_overlay` | Web app: skeleton drawn over the video (API: `include_pose`) |
 
 Everything is on by default. You can override switches in two places, and

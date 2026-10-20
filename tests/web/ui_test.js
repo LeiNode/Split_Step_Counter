@@ -142,6 +142,10 @@ function chooseFile(dom) {
   check(lines.length === 1 + analysis.events.length + analysis.strokes.swings.length, `CSV has a row per event and swing (${lines.length - 1})`);
   check(lines[0].startsWith("type,timestamp_ms"), "CSV header: " + lines[0].slice(0, 40));
   check(csv.includes("forehand") && csv.includes("split step"), "CSV contains shots and split steps");
+  let printedAs = null;
+  dom.window.print = () => { printedAs = doc.title; };
+  doc.getElementById("print-report").click();
+  check(printedAs === "clip-tennis-report" && doc.title === "Tennis Trainer", "print uses the report name, then restores the title");
   doc.getElementById("dl-json").click();
   check(saved && JSON.parse(await readBlob(saved)).count === analysis.count, "JSON report round-trips");
 
