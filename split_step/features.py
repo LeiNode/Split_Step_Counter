@@ -46,6 +46,7 @@ DEFAULTS: dict[str, tuple[bool, str]] = {
     "report_download":     (True,  "Web app: download results as JSON / CSV"),
     "drill_goals":         (True,  "Web app: set targets and see which ones each session met"),
     "session_history":     (True,  "Web app: keep past results in the browser and show progress"),
+    "session_compare":     (True,  "Web app: compare two past sessions side by side"),
 }
 
 # Child features are only on when all their parents are on too.
@@ -58,6 +59,7 @@ PARENTS = {
     "split_step_timing": ("split_step_counting", "stroke_training"),
     "rally_stats": ("stroke_training",),
     "swing_highlights": ("stroke_training",),
+    "session_compare": ("session_history",),
     "ready_position": ("stroke_training",),
 }
 

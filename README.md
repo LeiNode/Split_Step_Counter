@@ -221,6 +221,7 @@ everywhere:
 | `direct_upload`, `browser_uploads` | API upload routes |
 | `live_view` | Webcam button in the desktop GUI |
 | `session_history` | Web app: progress table and chart of past sessions, saved in the browser |
+| `session_compare` | Web app: tick two past sessions to compare every metric side by side, marked better / worse (needs `session_history`) |
 | `drill_goals` | Web app: set targets (split-step rate, consistency, recovery, ...) and see which ones each session met |
 | `swing_highlights` | Most typical, fastest and odd-one-out swing of each stroke (with the metric that made it odd), linked to the video |
 | `rally_stats` | Group swings into rallies: shots per rally, longest rally |

@@ -152,6 +152,24 @@ function chooseFile(dom) {
   doc.getElementById("go").click();
   await tick(); await tick();
   check(rows() === 2, "second analysis adds a row");
+  // Compare: tick both sessions; identical results -> "same" everywhere
+  const ticks = () => doc.querySelectorAll("#history-table input[type=checkbox]");
+  check(ticks().length === 2 && doc.getElementById("compare-table").hidden, "compare boxes, no table yet");
+  ticks()[0].click();
+  check(doc.getElementById("compare-hint").textContent.includes("one more"), "asks for a second session");
+  ticks()[1].click();
+  const cmp = doc.getElementById("compare-table");
+  check(!cmp.hidden && cmp.rows.length > 3 && cmp.textContent.includes("Split steps per minute"), "comparison table shown");
+  check([...cmp.rows].slice(1).every((r) => r.cells[3].textContent === "same"), "identical sessions compare as same");
+  // Make the newer session better on knee bend and worse on recovery
+  const hist = JSON.parse(dom.window.localStorage.getItem("tennis-trainer-history-v1"));
+  hist[0].knee = hist[1].knee - 10; hist[0].recovery = (hist[1].recovery ?? 1) + 0.5; hist[1].recovery = hist[1].recovery ?? 1;
+  dom.window.localStorage.setItem("tennis-trainer-history-v1", JSON.stringify(hist));
+  ticks()[0].click(); ticks()[0].click();   // untick + retick re-renders from storage
+  const cmpRow = (label) => [...cmp.rows].find((r) => r.cells[0].textContent.startsWith(label));
+  check(/▼ −10° better/.test(cmpRow("Landing knee").cells[3].textContent), "lower knee angle marked better: " + cmpRow("Landing knee").cells[3].textContent);
+  check(/▲ \+0\.5 s worse/.test(cmpRow("Back to ready").cells[3].textContent), "slower recovery marked worse");
+  check(cmpRow("Swings").cells[3].textContent === "same", "neutral metric has no verdict");
   // Progress chart: appears from the second session, one marker per session
   check(!doc.getElementById("chart-wrap").hidden, "progress chart shown with two sessions");
   const metricOpts = [...doc.querySelectorAll("#chart-metric option")].map((o) => o.value);
@@ -185,6 +203,8 @@ function chooseFile(dom) {
   check(!doc.getElementById("playback"), "playback controls removed when switched off");
   ({ dom, doc } = await load({ ...ALL, swing_highlights: false }));
   check(!doc.getElementById("highlights"), "highlights removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, session_compare: false }));
+  check(!doc.getElementById("compare"), "compare removed when switched off");
   doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "]" }));   // must not throw
   ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
   check([...doc.querySelectorAll("#model option")].map((o) => o.value).join() === "lstm", "disabled model removed");

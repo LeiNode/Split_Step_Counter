@@ -171,6 +171,10 @@
     </div>
     <p class="status" id="chart-empty" hidden></p>
     <div class="table-wrap"><table id="history-table"></table></div>
+    <div id="compare" data-feature="session_compare">
+      <p class="status" id="compare-hint">Tick two sessions to compare them.</p>
+      <div class="table-wrap"><table id="compare-table" hidden></table></div>
+    </div>
     <p><button class="linkish" id="clear-history">Clear history</button></p>
   </section>
 
@@ -623,6 +627,7 @@
       with_split: res.timing && res.timing.shots ? res.timing.fraction_with_split_step : null,
       per_min: res.session ? res.session.split_steps_per_minute : null,
       consistency: strokeMed("consistency"),
+      recovery: res.recovery && res.recovery.median_recovery_ms != null ? res.recovery.median_recovery_ms / 1000 : null,
     };
   }
 
@@ -631,7 +636,19 @@
     if (!box) return;  // feature switched off
     const list = readHistory();
     box.hidden = !list.length;
+    COMPARE = COMPARE.filter((d) => list.some((h) => h.date === d));
+    const pick = (h) => {
+      const c = document.createElement("input");
+      c.type = "checkbox"; c.checked = COMPARE.includes(h.date);
+      c.setAttribute("aria-label", "Compare this session");
+      c.addEventListener("change", () => {
+        COMPARE = c.checked ? [...COMPARE, h.date].slice(-2) : COMPARE.filter((d) => d !== h.date);
+        renderHistory();
+      });
+      return c;
+    };
     fillTable($("history-table"), [
+      ...($("compare") ? [["Compare", pick]] : []),
       ["Date", (h) => new Date(h.date).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })],
       ["Mode", (h) => KIND_LABEL[h.mode] || (h.mode === "auto" ? "Match play" : h.mode)],
       ["Clip", (h) => h.file],
@@ -641,8 +658,52 @@
       ["Contact height", (h) => fmt(h.contact)],
       ["Wrist speed", (h) => fmt(h.speed, 1, " m/s")],
       ["Split step before shot", (h) => h.with_split == null ? "–" : Math.round(h.with_split * 100) + "%"],
+      ["Recovery", (h) => fmt(h.recovery, 1, " s")],
     ], list);
     renderChart();
+    renderCompare(list);
+  }
+
+  // ── Compare two sessions ─────────────────────────────────────────────────
+  let COMPARE = [];  // dates (ids) of the ticked sessions, at most two
+  // [key, label, format, better: 1 = higher is better, -1 = lower, 0 = neither]
+  const COMPARE_METRICS = [
+    ["split_steps", "Split steps", (v) => String(v), 0],
+    ["per_min", "Split steps per minute", (v) => v.toFixed(1), 1],
+    ["knee", "Landing knee angle", (v) => v.toFixed(0) + "°", -1],
+    ["swings", "Swings", (v) => String(v), 0],
+    ["consistency", "Stroke consistency", (v) => v.toFixed(0) + "/100", 1],
+    ["with_split", "Shots with a split step before", (v) => Math.round(v * 100) + "%", 1],
+    ["recovery", "Back to ready", (v) => v.toFixed(1) + " s", -1],
+    ["contact", "Contact height", (v) => v.toFixed(2), 0],
+    ["speed", "Wrist speed", (v) => v.toFixed(1) + " m/s", 1],
+  ];
+
+  function renderCompare(list) {
+    if (!$("compare")) return;
+    const picked = list.filter((h) => COMPARE.includes(h.date)).reverse();  // older first
+    const table = $("compare-table");
+    table.hidden = picked.length !== 2;
+    $("compare-hint").textContent = picked.length === 2 ? "" : picked.length ? "Tick one more session." : "Tick two sessions to compare them.";
+    $("compare-hint").hidden = picked.length === 2;
+    if (table.hidden) return;
+    const [a, b] = picked;
+    const rows = COMPARE_METRICS.filter(([k]) => a[k] != null && b[k] != null);
+    const change = ([k, , f, better]) => {
+      const d = b[k] - a[k];
+      if (Math.abs(d) < 1e-9) return "same";
+      const span = document.createElement("span");
+      span.textContent = (d > 0 ? "▲ +" : "▼ −") + f(Math.abs(d));
+      if (better) {
+        const good = Math.sign(d) === better;
+        span.className = good ? "met" : "unmet";
+        span.append(good ? " better" : " worse");   // words, not colour alone
+      }
+      return span;
+    };
+    const day = (h) => shortDate(h.date) + " · " + h.file;
+    fillTable(table, [["Metric", (r) => r[1]], [day(a), (r) => r[2](a[r[0]])], [day(b), (r) => r[2](b[r[0]])], ["Change", change]], rows);
+    if (!rows.length) { table.hidden = true; $("compare-hint").hidden = false; $("compare-hint").textContent = "These two sessions have no metrics in common."; }
   }
 
   // ── Progress chart (single series: the picked metric over sessions) ──────
@@ -653,6 +714,7 @@
     ["consistency", "Stroke consistency (0-100)", (v) => v.toFixed(0)],
     ["contact", "Contact height (0 = hips, 1 = shoulders)", (v) => v.toFixed(2)],
     ["speed", "Wrist speed (m/s)", (v) => v.toFixed(1)],
+    ["recovery", "Back to ready after a shot (s, lower = faster)", (v) => v.toFixed(1) + " s"],
   ];
   const SVG_NS = "http://www.w3.org/2000/svg";
   const svgEl = (tag, attrs) => {
