@@ -32,21 +32,24 @@ def _third(items: list[dict], key: str, lo: float, hi: float) -> list[float]:
     return [x[key] for x in items if x.get(key) is not None and lo <= x["timestamp_ms"] <= hi]
 
 
-def fatigue_report(events: list[dict] | None, swings: list[dict] | None, duration_ms: float) -> dict:
+def fatigue_report(events: list[dict] | None, swings: list[dict] | None, duration_ms: float,
+                   start_ms: float = 0.0) -> dict:
     """{"measured": bool, "metrics": {name: {early, late, change, dropped}}, "tips": [...]}.
 
     change is relative (late / early - 1, rounded to 3 decimals); dropped is
     True when the metric got worse by more than its threshold. Split steps
-    flagged during_swing are left out, as in timing.py.
+    flagged during_swing are left out, as in timing.py. The session runs from
+    start_ms to duration_ms (when only part of a video was analysed).
     """
     out = {"measured": False, "metrics": {}, "tips": []}
-    if duration_ms < FATIGUE_MIN_MS:
+    span = duration_ms - start_ms
+    if span < FATIGUE_MIN_MS:
         return out
     sources = {"events": [e for e in (events or []) if not e.get("during_swing")], "swings": swings or []}
-    cut1, cut2 = duration_ms / 3, 2 * duration_ms / 3
+    cut1, cut2 = start_ms + span / 3, start_ms + 2 * span / 3
     dropped = []
     for key, (src, label, better, limit) in METRICS.items():
-        early = _third(sources[src], key, 0, cut1)
+        early = _third(sources[src], key, start_ms, cut1)
         late = _third(sources[src], key, cut2, duration_ms)
         if len(early) < FATIGUE_MIN_SAMPLES or len(late) < FATIGUE_MIN_SAMPLES:
             continue

@@ -32,3 +32,9 @@ def test_short_or_sparse_sessions_not_measured():
     assert fatigue_report(None, _swings([12] * 4, [9] * 4), FATIGUE_MIN_MS - 1) == {"measured": False, "metrics": {}, "tips": []}
     r = fatigue_report(None, _swings([12] * 3, [9] * 4), DUR)        # 3 early swings: too few
     assert not r["measured"] and not r["tips"]
+
+
+def test_thirds_measured_from_the_start_of_the_analysed_part():
+    shifted = [{**s, "timestamp_ms": s["timestamp_ms"] + 600_000} for s in _swings([12] * 4, [9] * 4)]
+    r = fatigue_report(None, shifted, DUR + 600_000, start_ms=600_000)
+    assert r["metrics"]["peak_wrist_speed"]["dropped"]

@@ -112,6 +112,7 @@ Both analysis endpoints take these query parameters:
 | `require_full_pose` | `true` (default), `false` | Skip the LSTM on frames where the hips, ankles, heels or toes aren't visible. The LSTM was only trained on fully visible frames. |
 | `drill` | omit, `forehand`, `backhand`, `serve`, `auto` | Stroke training. In a drill, every swing is scored as that stroke. `auto` classifies each swing; serve detection is reliable, but forehand vs backhand is experimental. |
 | `hand` | `auto` (default), `right`, `left` | Hitting hand for stroke training |
+| `start_s`, `end_s` | seconds | Analyse only that part of the video. Timestamps in the result still count from the start of the video. |
 | `include_pose` | `false` (default), `true` | Also return the per-frame skeleton for drawing overlays: ~7 KB per second, capped at ~1 MB |
 
 Example:
@@ -194,6 +195,7 @@ match clip, analysing every frame added 5 swings, at least 3 of them false.
 
 You can analyse without the server too:
 `python -m split_step.analyze practice.mp4 --model rules --drill serve`.
+Add `--start 12:30 --end 15:00` to analyse only part of a long recording.
 Add `--report session.md` for a readable Markdown report (coach's summary,
 practice plan, tables of split steps and swings) to share with a coach, and
 `--annotate annotated.mp4` for a copy of the video with the skeleton, a
@@ -231,6 +233,7 @@ everywhere:
 | `auto_stroke_detection` | "Match play (auto)" mode |
 | `split_step_timing` | "Split step before shot": links each swing to the split step before it (needs counting and stroke training) |
 | `lstm_model`, `rules_model` | Each split-step model |
+| `clip_range` | Analyse only part of a video: `start_s` / `end_s` in the API, `--start` / `--end` in the CLI, "Only analyse from … to …" in the web app |
 | `direct_upload`, `browser_uploads` | API upload routes |
 | `live_view` | Webcam button in the desktop GUI |
 | `rep_target` | Desktop GUI: set swings per set in a live drill; shows "12 / 20" and signals when the set is done |

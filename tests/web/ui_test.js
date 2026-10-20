@@ -285,6 +285,23 @@ function chooseFile(dom) {
   check(doc.querySelector('input[name="mode"]:checked').value === "forehand", "first remaining mode preselected");
   check(doc.getElementById("model-picker").hidden, "model picker hidden without split-step counting");
 
+  // 4b. Clip range: m:ss parsed into start_s / end_s; bad input stops before uploading
+  ({ dom, doc, calls } = await load(ALL));
+  chooseFile(dom);
+  doc.getElementById("range-start").value = "1:15"; doc.getElementById("range-end").value = "90.5";
+  doc.getElementById("go").click(); await tick(); await tick();
+  const rangeCall = calls.find((u) => u.includes("/v1/count?"));
+  check(rangeCall.includes("start_s=75") && rangeCall.includes("end_s=90.5"), "range sent as seconds: " + rangeCall);
+  const before5 = calls.length;
+  doc.getElementById("range-end").value = "1:00";
+  doc.getElementById("go").click(); await tick();
+  check(calls.length === before5 && doc.getElementById("status").textContent.includes("end time must be after"), "end before start rejected");
+  doc.getElementById("range-end").value = "soon";
+  doc.getElementById("go").click(); await tick();
+  check(doc.getElementById("status").textContent.includes("Can't read \"soon\""), "unreadable time rejected");
+  ({ dom, doc } = await load({ ...ALL, clip_range: false }));
+  check(!doc.getElementById("range-row"), "range inputs removed when switched off");
+
   // 5. Upload error surfaces (not silently swallowed) when uploads ARE configured
   ({ dom, doc } = await load(ALL, { uploadsConfigured: true }));
   chooseFile(dom);

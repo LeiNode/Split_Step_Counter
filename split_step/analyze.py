@@ -71,7 +71,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                   camera_view_check: bool = True, footwork: bool = True,
                   coach: bool = True, fatigue: bool = True,
                   highlights: bool = True, practice: bool = True, max_fps: float | None = 30.0,
-                  max_seconds: float | None = None) -> dict:
+                  max_seconds: float | None = None,
+                  start_s: float = 0.0, end_s: float | None = None) -> dict:
     """Analyse a video file.
 
     model              — split-step counter: "lstm" (GUI default) or "rules"
@@ -102,10 +103,15 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     max_seconds        — refuse videos longer than this (VideoTooLong). Checked up
                          front from the container's metadata and again while
                          decoding, since some formats (e.g. webm) report no length.
+                         With start_s / end_s it applies to the analysed part.
+    start_s, end_s     — analyse only this part of the video (seconds; end_s None =
+                         to the end). Timestamps in the result stay relative to the
+                         start of the video, so they still match the full clip.
 
     Returns a JSON-serialisable dict. Always present:
         frames, frames_with_pose, duration_ms, fps, processing_s,
         frames_analysed (fewer than frames when max_fps thinned the video)
+        range_ms (only with start_s / end_s): [first, last] analysed timestamp
     With count_split_steps:
         count, model, frames_tracked,
         events  — one dict per split step: timestamp_ms (+ quality metrics)
@@ -143,6 +149,10 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
         raise ValueError(f"drill must be one of {DRILLS}, got {drill!r}")
     if hand not in HANDS:
         raise ValueError(f"hand must be one of {HANDS}, got {hand!r}")
+    if start_s < 0 or (end_s is not None and end_s <= start_s):
+        raise ValueError(f"need 0 <= start_s < end_s, got start_s={start_s}, end_s={end_s}")
+    trimmed = start_s > 0 or end_s is not None
+    start_ms, end_ms = start_s * 1000, (end_s * 1000 if end_s is not None else None)
     download_model()
 
     cap = cv2.VideoCapture(video_path)
@@ -151,9 +161,13 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
 
     if max_seconds:
         n, f = cap.get(cv2.CAP_PROP_FRAME_COUNT), cap.get(cv2.CAP_PROP_FPS)
-        if n > 0 and f > 0 and n / f > max_seconds:
+        span = (min(end_s, n / f) if end_s is not None else n / f) - start_s if n > 0 and f > 0 else 0
+        if span > max_seconds:
             cap.release()
-            raise VideoTooLong(f"Video is {n / f / 60:.1f} min long; the limit is {max_seconds / 60:g} min.")
+            what = "The chosen part" if trimmed else "Video"
+            raise VideoTooLong(f"{what} is {span / 60:.1f} min long; the limit is {max_seconds / 60:g} min.")
+    if start_ms:
+        cap.set(cv2.CAP_PROP_POS_MSEC, start_ms)   # may land on an earlier keyframe; skipped below
 
     started  = time.perf_counter()
     video_ts = [0.0]  # seconds; the detectors read this as their clock
@@ -162,7 +176,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
 
     track = PoseTrackBuilder(int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
                              int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-    events, frames, with_pose, tracked, last_ts_ms = [], 0, 0, 0, 0.0
+    events, frames, with_pose, tracked, last_ts_ms, first_ts_ms = [], 0, 0, 0, 0.0, None
     min_gap_ms = 1000.0 / max_fps * _FRAME_SKIP_SLACK if max_fps else 0.0
     analysed, last_used_ms = 0, None
     try:
@@ -172,12 +186,18 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                 if not ok:
                     break
                 ts_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
+                if ts_ms < start_ms:
+                    continue
+                if end_ms is not None and ts_ms > end_ms:
+                    break
                 if frames and ts_ms <= last_ts_ms:
                     # MediaPipe VIDEO mode rejects non-increasing timestamps
                     # (some containers report duplicates); nudge forward 1 ms.
                     ts_ms = last_ts_ms + 1
-                if max_seconds and ts_ms > max_seconds * 1000:
+                if max_seconds and ts_ms - start_ms > max_seconds * 1000:
                     raise VideoTooLong(f"Video is longer than the {max_seconds / 60:g} min limit.")
+                if first_ts_ms is None:
+                    first_ts_ms = ts_ms
                 frames    += 1
                 last_ts_ms = ts_ms
                 if last_used_ms is not None and ts_ms - last_used_ms < min_gap_ms:
@@ -201,7 +221,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
         cap.release()
 
     if frames == 0:
-        raise VideoError("The video contains no decodable frames.")
+        raise VideoError("No frames in the chosen part of the video." if trimmed
+                         else "The video contains no decodable frames.")
 
     pose_track = track.build()
     result = {}
@@ -230,7 +251,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
         result["footwork"] = footwork_report(pose_track, result["strokes"]["swings"] if drill else None)
     if fatigue:
         result["fatigue"] = fatigue_report(result.get("events"), result["strokes"]["swings"] if drill else None,
-                                           last_ts_ms)
+                                           last_ts_ms, start_ms=first_ts_ms)
     if coach:
         result["coach"] = coach_summary(result)
         if practice:
@@ -244,7 +265,20 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
         "fps":              round(fps, 3) if fps and fps > 0 else 0,
         "processing_s":     round(time.perf_counter() - started, 3),
     })
+    if trimmed:
+        result["range_ms"] = [round(first_ts_ms, 1), round(last_ts_ms, 1)]
     return result
+
+
+def parse_time(text: str) -> float:
+    """Seconds from "75", "75.5", "1:15" or "1:01:15" (h:m:s)."""
+    parts = str(text).strip().split(":")
+    if not 1 <= len(parts) <= 3:
+        raise ValueError(f"can't read {text!r} as a time")
+    seconds = 0.0
+    for p in parts:
+        seconds = seconds * 60 + float(p)
+    return seconds
 
 
 if __name__ == "__main__":
@@ -259,13 +293,15 @@ if __name__ == "__main__":
     parser.add_argument("--hand", choices=HANDS, default="auto", help="Hitting hand for stroke analysis")
     parser.add_argument("--max-fps", type=float, default=30.0,
                         help="Analyse at most this many frames per second; 0 = every frame (default 30)")
+    parser.add_argument("--start", type=parse_time, default=0.0, help="Analyse from here (seconds or m:ss)")
+    parser.add_argument("--end", type=parse_time, help="Analyse up to here (seconds or m:ss)")
     parser.add_argument("--report", metavar="PATH.md", help="Also write a readable Markdown report here")
     parser.add_argument("--annotate", metavar="PATH.mp4",
                         help="Also write a copy of the video with the skeleton, split steps and swings drawn on")
     args = parser.parse_args()
     result = analyze_video(args.video, args.model, require_full_pose=not args.allow_partial_pose,
                            drill=args.drill, hand=args.hand, max_fps=args.max_fps or None,
-                           include_pose=bool(args.annotate))
+                           include_pose=bool(args.annotate), start_s=args.start, end_s=args.end)
     if args.annotate:
         from .annotate import annotate_video
         annotate_video(args.video, result, args.annotate)

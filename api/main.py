@@ -126,6 +126,8 @@ class AnalysisOptions:
         hand: HandName = Query("auto", description="Hitting hand for stroke training"),
         include_pose: bool = Query(False, description="Also return the per-frame skeleton "
                                                       "(for drawing overlays; ~7 KB per second, max ~1 MB)"),
+        start_s: float = Query(0.0, ge=0, description="Analyse from this many seconds into the video"),
+        end_s: float | None = Query(None, gt=0, description="Analyse up to this many seconds into the video"),
     ):
         flags = features.all_features()
         counting = flags["split_step_counting"]
@@ -136,6 +138,10 @@ class AnalysisOptions:
                                 detail=f"Feature '{features.drill_feature(drill)}' is disabled.")
         if include_pose and not flags["pose_overlay"]:
             raise HTTPException(status_code=404, detail="Feature 'pose_overlay' is disabled.")
+        if (start_s or end_s is not None) and not flags["clip_range"]:
+            raise HTTPException(status_code=404, detail="Feature 'clip_range' is disabled.")
+        if end_s is not None and end_s <= start_s:
+            raise HTTPException(status_code=422, detail="end_s must be after start_s.")
         if not counting and drill is None:
             raise HTTPException(status_code=400, detail="Split-step counting is disabled; choose a drill.")
         self.kwargs = dict(model=model, require_full_pose=require_full_pose, drill=drill, hand=hand,
@@ -146,7 +152,7 @@ class AnalysisOptions:
                            camera_view_check=flags["camera_view_check"],
                            footwork=flags["footwork"], fatigue=flags["fatigue_trend"],
                            highlights=flags["swing_highlights"], practice=flags["practice_plan"],
-                           coach=flags["coach_summary"])
+                           coach=flags["coach_summary"], start_s=start_s, end_s=end_s)
 
 
 class CountResult(BaseModel):
@@ -167,6 +173,7 @@ class CountResult(BaseModel):
     coach: dict | None = None
     frames: int
     frames_analysed: int | None = None
+    range_ms: list[float] | None = None
     frames_with_pose: int
     duration_ms: float
     fps: float

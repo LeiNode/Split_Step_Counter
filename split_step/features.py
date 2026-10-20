@@ -40,6 +40,7 @@ DEFAULTS: dict[str, tuple[bool, str]] = {
     "split_step_timing":   (True,  "Link split steps to the following shots (needs counting + stroke training)"),
     "lstm_model":          (True,  "LSTM split-step model"),
     "rules_model":         (True,  "Rule-based split-step model"),
+    "clip_range":          (True,  "Analyse only part of a video (start / end time)"),
     "direct_upload":       (True,  "API: POST /v1/count with the video in the request"),
     "browser_uploads":     (True,  "API: presigned S3 uploads (/v1/upload-url, /v1/count/s3)"),
     "live_view":           (True,  "Desktop GUI: webcam live view"),

@@ -166,3 +166,19 @@ def test_markdown_report():
 def test_markdown_report_switch(monkeypatch):
     monkeypatch.setenv("SPLIT_STEP_FEATURES", "markdown_report=off")
     assert client.post("/v1/report", json={"result": {}}).status_code == 404
+
+
+def test_clip_range_checked(monkeypatch, tmp_path):
+    from tests.test_analyze import _clip
+    clip = tmp_path / "c.mp4"
+    _clip(clip, 30, seconds=3)
+    with open(clip, "rb") as f:
+        r = client.post("/v1/count?model=rules&start_s=1&end_s=2", files={"file": ("c.mp4", f, "video/mp4")})
+    assert r.status_code == 200 and 1000 <= r.json()["range_ms"][0] < 1100
+    with open(clip, "rb") as f:
+        assert client.post("/v1/count?model=rules&start_s=2&end_s=1",
+                           files={"file": ("c.mp4", f, "video/mp4")}).status_code == 422
+    monkeypatch.setenv("SPLIT_STEP_FEATURES", "clip_range=off")
+    with open(clip, "rb") as f:
+        assert client.post("/v1/count?model=rules&start_s=1",
+                           files={"file": ("c.mp4", f, "video/mp4")}).status_code == 404

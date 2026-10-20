@@ -87,6 +87,7 @@
                  border-radius: 6px; padding: .3rem .5rem; font-size: .8rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
     .chart-tip b { display: block; }
     .playback { margin-top: .5rem; }
+    input.time { font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: .2rem .4rem; }
     input.note { font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 4px;
                  padding: .1rem .3rem; width: 100%; min-width: 8rem; }
     input.note:hover, input.note:focus { border-color: var(--line); background: var(--card); }
@@ -153,6 +154,11 @@
       <input type="file" id="video" accept="video/*">
       <button id="go" disabled>Analyse</button>
     </div>
+    <p class="row" id="range-row" data-feature="clip_range">
+      <label>Only analyse from <input id="range-start" class="time" placeholder="0:00" inputmode="decimal" size="7"></label>
+      <label>to <input id="range-end" class="time" placeholder="end" inputmode="decimal" size="7"></label>
+      <span class="keys">seconds or m:ss, e.g. 12:30</span>
+    </p>
     <p class="status" id="status"></p>
     <p class="row" id="downloads" data-feature="report_download" hidden>
       <button class="linkish" id="dl-json">Download report (JSON)</button>
@@ -290,8 +296,22 @@
     return data;
   }
 
+  // "75", "75.5", "1:15" or "1:01:15" -> seconds; "" -> null
+  function parseTime(text) {
+    const t = text.trim();
+    if (!t) return null;
+    if (!/^\d+(\.\d+)?(:\d{1,2}(\.\d+)?){0,2}$/.test(t)) throw new Error(`Can't read "${t}" as a time (use seconds or m:ss).`);
+    return t.split(":").reduce((acc, p) => acc * 60 + +p, 0);
+  }
+
   function queryString() {
     const m = mode(), q = new URLSearchParams();
+    if ($("range-start")) {
+      const start = parseTime($("range-start").value), end = parseTime($("range-end").value);
+      if (start != null && end != null && end <= start) throw new Error("The end time must be after the start time.");
+      if (start) q.set("start_s", start);
+      if (end != null) q.set("end_s", end);
+    }
     if ($("model")) q.set("model", $("model").value);
     if (m !== "split") q.set("drill", m);
     if ($("hand") && m !== "split") q.set("hand", $("hand").value);
