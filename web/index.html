@@ -672,6 +672,9 @@
       return v.length ? Math.min(...v) : null; }],
     ["recovery", "Back to ready after a shot, at most", "max", " s", (r) => r.recovery && r.recovery.median_recovery_ms != null ? r.recovery.median_recovery_ms / 1000 : null],
     ["rally", "Longest rally, at least", "min", " shots", (r) => r.rallies ? r.rallies.summary.longest : null],
+    ["head", "Head movement at contact, at most", "max", " cm", (r) => summarise(r, "", "").head],
+    ["prep", "Shoulders turned before contact, at least", "min", " s", (r) => summarise(r, "", "").prep],
+    ["steps_min", "Steps per minute, at least", "min", "", (r) => r.footwork ? r.footwork.steps_per_minute : null],
   ];
   const GOALS_KEY = "tennis-trainer-goals-v1";
 
@@ -761,6 +764,12 @@
   function summarise(res, fileName, modeName) {
     const med = (o) => (o && o.median !== undefined ? o.median : null);
     const sw = res.strokes ? res.strokes.summary : {};
+    // Median over forehand + backhand swings (serves don't have these metrics)
+    const groundMed = (key, scale) => {
+      const v = (res.strokes ? res.strokes.swings : []).filter((s) => s.stroke === "forehand" || s.stroke === "backhand")
+        .map((s) => s[key]).filter((x) => x != null).sort((a, b) => a - b);
+      return v.length ? (v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2) * scale : null;
+    };
     const strokeMed = (key) => {
       const vals = Object.values(sw).map((v) => typeof v[key] === "number" ? v[key] : med(v[key]))
         .filter((v) => v !== null && v !== undefined);
@@ -777,6 +786,9 @@
       per_min: res.session ? res.session.split_steps_per_minute : null,
       consistency: strokeMed("consistency"),
       recovery: res.recovery && res.recovery.median_recovery_ms != null ? res.recovery.median_recovery_ms / 1000 : null,
+      head: groundMed("head_movement_m", 100),            // cm
+      prep: groundMed("prep_lead_ms", 0.001),             // s
+      steps_min: res.footwork ? res.footwork.steps_per_minute : null,
     };
   }
 
@@ -847,6 +859,9 @@
     ["recovery", "Back to ready", (v) => v.toFixed(1) + " s", -1],
     ["contact", "Contact height", (v) => v.toFixed(2), 0],
     ["speed", "Wrist speed", (v) => v.toFixed(1) + " m/s", 1],
+    ["head", "Head movement at contact", (v) => v.toFixed(0) + " cm", -1],
+    ["prep", "Shoulders turned before contact", (v) => v.toFixed(2) + " s", 1],
+    ["steps_min", "Steps per minute", (v) => v.toFixed(0), 1],
   ];
 
   function renderCompare(list) {
@@ -885,6 +900,9 @@
     ["contact", "Contact height (0 = hips, 1 = shoulders)", (v) => v.toFixed(2)],
     ["speed", "Wrist speed (m/s)", (v) => v.toFixed(1)],
     ["recovery", "Back to ready after a shot (s, lower = faster)", (v) => v.toFixed(1) + " s"],
+    ["head", "Head movement at contact (cm, lower = stiller)", (v) => v.toFixed(0) + " cm"],
+    ["prep", "Shoulders turned before contact (s, higher = earlier)", (v) => v.toFixed(2) + " s"],
+    ["steps_min", "Steps per minute", (v) => v.toFixed(0)],
   ];
   const SVG_NS = "http://www.w3.org/2000/svg";
   const svgEl = (tag, attrs) => {

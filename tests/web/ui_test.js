@@ -59,7 +59,7 @@ function chooseFile(dom) {
   check(!doc.getElementById("go").disabled, "Analyse enabled after choosing a file");
   // Goals: one achievable (the fixture has 8 swings in one rally), one not, one unmeasurable
   const setGoal = (key, v) => { const i = doc.getElementById("goal-" + key); i.value = v; i.dispatchEvent(new dom.window.Event("change")); };
-  check(doc.querySelectorAll("#goals-form input").length === 6, "goal inputs built");
+  check(doc.querySelectorAll("#goals-form input").length === 9, "goal inputs built");
   setGoal("rally", 5); setGoal("with_split", 90); setGoal("split_rate", 1);
   doc.querySelector('input[value="auto"]').click();
   doc.getElementById("model").value = "rules";
@@ -291,6 +291,23 @@ function chooseFile(dom) {
   doc.getElementById("go").click();
   await tick(); await tick();
   check(doc.getElementById("status").textContent.includes("boom"), "real upload errors shown: " + doc.getElementById("status").textContent);
+
+  // 5b. New technique metrics tracked in history, chart and goals
+  const withTech = JSON.parse(JSON.stringify(analysis));
+  withTech.strokes.swings.forEach((s, i) => { s.head_movement_m = 0.04 + 0.01 * i; s.prep_lead_ms = 500 + 100 * i; });
+  ({ dom, doc } = await load(ALL, { response: withTech }));
+  const g = (k, v) => { const i = doc.getElementById("goal-" + k); i.value = v; i.dispatchEvent(new dom.window.Event("change")); };
+  g("head", 5); g("prep", 0.5); g("steps_min", 1000);
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  const saved1 = JSON.parse(dom.window.localStorage.getItem("tennis-trainer-history-v1"))[0];
+  const gs = withTech.strokes.swings.filter((s) => s.stroke === "forehand" || s.stroke === "backhand");
+  check(saved1.head > 4 && saved1.head < 4 + gs.length && saved1.prep >= 0.5 && saved1.steps_min === withTech.footwork.steps_per_minute,
+        `new metrics saved to history: head ${saved1.head} cm, prep ${saved1.prep} s`);
+  const gl = doc.getElementById("goal-list").textContent;
+  check(/✗ Not yet · Head movement at contact/.test(gl) && /✓ Met · Shoulders turned before contact/.test(gl)
+        && /✗ Not yet · Steps per minute/.test(gl), "goals judged on the new metrics: " + gl.slice(0, 80));
+  doc.getElementById("go").click(); await tick(); await tick();
+  check([...doc.querySelectorAll("#chart-metric option")].some((o) => o.value === "prep"), "prep offered as a chart metric");
 
   // 6. Fatigue trend: late-vs-early change shown, its tip listed
   const fatigue = { measured: true, tips: ["You fade late in the session: swing speed (-17%) ..."],
