@@ -14,6 +14,7 @@ is computed from the track afterwards.
 Usage
 -----
     python -m split_step.analyze VIDEO [--model lstm|rules] [--drill auto|forehand|backhand|serve]
+                                 [--report session.md]
 
     from split_step.analyze import analyze_video
     result = analyze_video("clip.mp4", model="rules", drill="forehand")
@@ -258,8 +259,13 @@ if __name__ == "__main__":
     parser.add_argument("--hand", choices=HANDS, default="auto", help="Hitting hand for stroke analysis")
     parser.add_argument("--max-fps", type=float, default=30.0,
                         help="Analyse at most this many frames per second; 0 = every frame (default 30)")
+    parser.add_argument("--report", metavar="PATH.md", help="Also write a readable Markdown report here")
     args = parser.parse_args()
-    print(json.dumps(analyze_video(args.video, args.model,
-                                   require_full_pose=not args.allow_partial_pose,
-                                   drill=args.drill, hand=args.hand,
-                                   max_fps=args.max_fps or None), indent=2))
+    result = analyze_video(args.video, args.model, require_full_pose=not args.allow_partial_pose,
+                           drill=args.drill, hand=args.hand, max_fps=args.max_fps or None)
+    if args.report:
+        import os
+        from .report import to_markdown
+        with open(args.report, "w", encoding="utf-8") as f:
+            f.write(to_markdown(result, os.path.basename(args.video)))
+    print(json.dumps(result, indent=2))

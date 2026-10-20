@@ -8,7 +8,7 @@ run.
 
 Usage
 -----
-    python -m split_step.batch FOLDER [--out summary.csv] [--json-dir reports/]
+    python -m split_step.batch FOLDER [--out summary.csv] [--json-dir reports/] [--report-dir reports/]
                                [--model lstm|rules] [--drill auto|forehand|backhand|serve]
                                [--hand auto|right|left] [--recursive]
 """
@@ -19,6 +19,7 @@ import os
 import sys
 
 from .analyze import MODELS, VideoError, analyze_video
+from .report import to_markdown
 from .strokes import DRILLS, HANDS, STROKES
 
 VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv")
@@ -67,12 +68,14 @@ def summary_row(name: str, result: dict) -> dict:
 
 
 def run_batch(videos: list[str], out_csv: str | None = None, json_dir: str | None = None,
-              progress=None, **analyze_kwargs) -> list[dict]:
+              progress=None, report_dir: str | None = None, **analyze_kwargs) -> list[dict]:
     """Analyse each video; returns the rows and writes them to out_csv if given.
-    With json_dir, each clip's full result is also saved as <name>.json there."""
+    With json_dir, each clip's full result is also saved as <name>.json there;
+    with report_dir, a Markdown report as <name>.md."""
     rows = []
-    if json_dir:
-        os.makedirs(json_dir, exist_ok=True)
+    for d in (json_dir, report_dir):
+        if d:
+            os.makedirs(d, exist_ok=True)
     for n, path in enumerate(videos, 1):
         name = os.path.basename(path)
         if progress:
@@ -83,9 +86,13 @@ def run_batch(videos: list[str], out_csv: str | None = None, json_dir: str | Non
             rows.append({**dict.fromkeys(COLUMNS), "file": name, "error": str(e)})
             continue
         rows.append(summary_row(name, result))
+        stem = os.path.splitext(name)[0]
         if json_dir:
-            with open(os.path.join(json_dir, os.path.splitext(name)[0] + ".json"), "w", encoding="utf-8") as f:
+            with open(os.path.join(json_dir, stem + ".json"), "w", encoding="utf-8") as f:
                 json.dump(result, f, indent=2)
+        if report_dir:
+            with open(os.path.join(report_dir, stem + ".md"), "w", encoding="utf-8") as f:
+                f.write(to_markdown(result, name))
     if out_csv:
         with open(out_csv, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=COLUMNS)
@@ -101,6 +108,7 @@ if __name__ == "__main__":
     parser.add_argument("folder")
     parser.add_argument("--out", default="summary.csv", help="Summary CSV path (default summary.csv)")
     parser.add_argument("--json-dir", help="Also save each clip's full report as JSON here")
+    parser.add_argument("--report-dir", help="Also save each clip's Markdown report here")
     parser.add_argument("--recursive", action="store_true", help="Include videos in subfolders")
     parser.add_argument("--model", choices=MODELS, default="lstm")
     parser.add_argument("--drill", choices=DRILLS, help="Also analyse strokes (forehand/backhand/serve/auto)")
@@ -111,6 +119,7 @@ if __name__ == "__main__":
     if not videos:
         sys.exit(f"No videos ({', '.join(VIDEO_EXTS)}) found in {args.folder}")
     rows = run_batch(videos, args.out, args.json_dir, progress=lambda m: print(m, file=sys.stderr),
+                     report_dir=args.report_dir,
                      model=args.model, drill=args.drill, hand=args.hand)
     failed = sum(r["error"] is not None for r in rows)
     print(f"Wrote {args.out}: {len(rows) - failed} analysed, {failed} failed", file=sys.stderr)
