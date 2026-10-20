@@ -354,6 +354,8 @@
   }
   const fmt = (v, digits = 2, unit = "") => (v === null || v === undefined) ? "–" : `${(+v).toFixed(digits)}${unit}`;
   const sec = (ms) => (ms / 1000).toFixed(2) + " s";
+  // [start, end] ms of what was analysed (all of it, or the chosen part)
+  const span = (res) => [res.range_ms ? res.range_ms[0] : 0, res.duration_ms];
   const pct = (change) => (change > 0 ? "+" : change < 0 ? "−" : "") + Math.abs(Math.round(change * 100)) + "%";
 
   function seekLink(ms) {
@@ -458,10 +460,11 @@
     svg.replaceChildren(); tip.hidden = true;
     const W = 600, H = 180, L = 40, R = 10, T = 10, B = 24;
     svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    svg.setAttribute("aria-label", `Wrist speed of ${sw.length} swings over ${sec(res.duration_ms)}`);
+    const [t0, t1] = span(res);
+    svg.setAttribute("aria-label", `Wrist speed of ${sw.length} swings from ${sec(t0)} to ${sec(t1)}`);
     const v = sw.map((s) => s.peak_wrist_speed);
     const lo = Math.max(0, Math.floor(Math.min(...v) - 1)), hi = Math.ceil(Math.max(...v) + 1);
-    const x = (ms) => L + (ms / res.duration_ms) * (W - L - R);
+    const x = (ms) => L + ((ms - t0) / Math.max(1, t1 - t0)) * (W - L - R);
     const y = (val) => T + (1 - (val - lo) / (hi - lo)) * (H - T - B);
     for (let g = 0; g <= 3; g++) {                            // recessive grid, y labels in m/s
       const val = lo + (g / 3) * (hi - lo);
@@ -470,7 +473,7 @@
       t.textContent = val.toFixed(0) + (g === 3 ? " m/s" : "");
       svg.append(t);
     }
-    [0, res.duration_ms].forEach((ms, i) => {
+    [t0, t1].forEach((ms, i) => {
       const t = svgEl("text", { class: "axis-label", x: x(ms), y: H - 6, "text-anchor": i ? "end" : "start" });
       t.textContent = sec(ms);
       svg.append(t);
@@ -644,7 +647,8 @@
     $("timeline").replaceChildren(...marks.map(([kind, ms]) => {
       const b = document.createElement("button");
       b.className = "mk k-" + kind;
-      b.style.left = Math.min(100, (ms / res.duration_ms) * 100) + "%";
+      const [t0, t1] = span(res);
+      b.style.left = Math.min(100, Math.max(0, ((ms - t0) / Math.max(1, t1 - t0)) * 100)) + "%";
       b.title = `${KIND_LABEL[kind] || kind} at ${sec(ms)}`;
       b.setAttribute("aria-label", b.title);
       b.onclick = () => seekLink(ms).onclick();

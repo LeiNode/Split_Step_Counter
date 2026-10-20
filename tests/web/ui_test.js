@@ -10,6 +10,7 @@ const analysis = JSON.parse(fs.readFileSync(respPath, "utf8"));
 let failures = 0;
 const check = (cond, msg) => { console.log((cond ? "ok   " : "FAIL ") + msg); if (!cond) failures++; };
 const tick = () => new Promise((r) => setTimeout(r, 30));
+const sec2 = (ms) => (ms / 1000).toFixed(2) + " s";
 
 async function load(flags, { uploadsConfigured = false, response = analysis, rateLeft = null } = {}) {
   const calls = [];
@@ -300,6 +301,11 @@ function chooseFile(dom) {
   doc.getElementById("range-end").value = "soon";
   doc.getElementById("go").click(); await tick();
   check(doc.getElementById("status").textContent.includes("Can't read \"soon\""), "unreadable time rejected");
+  const sw0 = analysis.strokes.swings;
+  ({ dom, doc } = await load(ALL, { response: { ...analysis, range_ms: [sw0[0].timestamp_ms, analysis.duration_ms] } }));
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  const firstMk = [...doc.querySelectorAll("#timeline .mk")].find((b) => b.title.includes(sec2(sw0[0].timestamp_ms)));
+  check(firstMk && parseFloat(firstMk.style.left) === 0, "timeline starts at the analysed range: " + (firstMk && firstMk.style.left));
   ({ dom, doc } = await load({ ...ALL, clip_range: false }));
   check(!doc.getElementById("range-row"), "range inputs removed when switched off");
 
