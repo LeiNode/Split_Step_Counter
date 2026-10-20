@@ -102,6 +102,27 @@ function chooseFile(dom) {
   last.click();
   check(doc.getElementById("player").currentTime > 0, "clicking a marker seeks the video");
 
+  // Playback: shot-to-shot navigation, frame stepping, slow motion
+  const player = doc.getElementById("player");
+  const marksMs = [...analysis.events.filter((e) => !e.during_swing).map((e) => e.timestamp_ms),
+                   ...analysis.strokes.swings.map((s) => s.timestamp_ms)].sort((a, b) => a - b);
+  const parkedAt = (ms) => Math.abs(player.currentTime - Math.max(0, ms / 1000 - 1)) < 0.01;
+  check(!doc.getElementById("playback").hidden && !doc.getElementById("next-shot").disabled, "playback controls shown");
+  player.currentTime = 0; doc.getElementById("next-shot").click();
+  const firstAfter = marksMs.find((m) => m > 1250);
+  check(parkedAt(firstAfter), "Next jumps to the next shot");
+  doc.getElementById("next-shot").click();
+  const second = marksMs.find((m) => m > firstAfter + 250);
+  check(parkedAt(second), "Next again moves on");
+  doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "[" }));
+  check(parkedAt(firstAfter), "[ key goes back a shot");
+  const before = player.currentTime;
+  doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "." }));
+  check(Math.abs(player.currentTime - before - 1 / analysis.fps) < 0.001, ". steps one frame forward");
+  const sp = doc.getElementById("speed");
+  sp.value = "0.25"; sp.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  check(player.playbackRate === 0.25, "slow motion sets the playback rate");
+
   // Rallies
   check(doc.getElementById("stroke-stats").textContent.includes("Longest rally"), "rally stats shown");
   check(doc.getElementById("stroke-table").textContent.includes("Rally"), "rally column shown");
@@ -160,6 +181,9 @@ function chooseFile(dom) {
   chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
   check(!calls.some((u) => u.includes("include_pose")), "no skeleton requested when overlay is off");
   check(!doc.getElementById("downloads"), "download buttons removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, playback_controls: false }));
+  check(!doc.getElementById("playback"), "playback controls removed when switched off");
+  doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "]" }));   // must not throw
   ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
   check([...doc.querySelectorAll("#model option")].map((o) => o.value).join() === "lstm", "disabled model removed");
 

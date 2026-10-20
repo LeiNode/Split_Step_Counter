@@ -74,6 +74,9 @@
     .chart-tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line);
                  border-radius: 6px; padding: .3rem .5rem; font-size: .8rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
     .chart-tip b { display: block; }
+    .playback { margin-top: .5rem; }
+    .keys { color: var(--dim); font-size: .8rem; }
+    kbd { font: inherit; font-size: .75rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 .3rem; }
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -123,6 +126,12 @@
     <div class="stage" id="stage" hidden>
       <video id="player" controls playsinline></video>
       <canvas id="overlay" data-feature="pose_overlay"></canvas>
+    </div>
+    <div class="row playback" id="playback" data-feature="playback_controls" hidden>
+      <button class="linkish" id="prev-shot" disabled title="Previous shot ( [ )">◀ Previous</button>
+      <button class="linkish" id="next-shot" disabled title="Next shot ( ] )">Next ▶</button>
+      <label>Speed <select id="speed"><option value="1">1×</option><option value="0.5">0.5×</option><option value="0.25">0.25×</option></select></label>
+      <span class="keys">Keys: <kbd>[</kbd> <kbd>]</kbd> previous / next shot · <kbd>,</kbd> <kbd>.</kbd> one frame back / forward</span>
     </div>
     <label data-feature="pose_overlay"><input type="checkbox" id="show-skeleton" checked> Show skeleton</label>
     <div id="timeline-box" hidden>
@@ -264,7 +273,7 @@
   function seekLink(ms) {
     const a = document.createElement("a");
     a.className = "ts"; a.textContent = sec(ms);
-    a.onclick = () => { const p = $("player"); p.currentTime = Math.max(0, ms / 1000 - 1); p.play(); };
+    a.onclick = () => { const p = $("player"); p.currentTime = Math.max(0, ms / 1000 - LEAD_S); p.play(); };
     return a;
   }
 
@@ -399,6 +408,38 @@
   window.addEventListener("resize", drawOverlay);
   $("show-skeleton")?.addEventListener("change", drawOverlay);
 
+  // ── Playback: slow motion, shot-to-shot navigation, frame stepping ───────
+  let MARKS = [];      // sorted timestamps (ms) of split steps and swings
+  const LEAD_S = 1;    // seekLink starts playback this long before the moment
+
+  function jumpShot(dir) {
+    if (!MARKS.length) return;
+    // Where the "current" shot is: seekLink parked the video LEAD_S before it.
+    // Within 250 ms of it, Previous goes to the shot before; later, it replays this one.
+    const ref = $("player").currentTime * 1000 + LEAD_S * 1000;
+    const ms = dir > 0 ? MARKS.find((m) => m > ref + 250) : [...MARKS].reverse().find((m) => m < ref - 250);
+    if (ms !== undefined) seekLink(ms).onclick();
+  }
+
+  function stepFrame(dir) {
+    const p = $("player");
+    p.pause();
+    p.currentTime = Math.max(0, p.currentTime + dir / ((LAST && LAST.res.fps) || 30));
+  }
+
+  $("prev-shot")?.addEventListener("click", () => jumpShot(-1));
+  $("next-shot")?.addEventListener("click", () => jumpShot(1));
+  $("speed")?.addEventListener("change", (e) => {
+    const p = $("player");
+    p.playbackRate = p.defaultPlaybackRate = +e.target.value;  // default survives loading a new clip
+  });
+  document.addEventListener("keydown", (e) => {
+    if (!$("playback") || $("stage").hidden || e.ctrlKey || e.metaKey || e.altKey
+        || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    const act = { "[": () => jumpShot(-1), "]": () => jumpShot(1), ",": () => stepFrame(-1), ".": () => stepFrame(1) }[e.key];
+    if (act) { e.preventDefault(); act(); }
+  });
+
   const KIND_LABEL = { split: "Split step", forehand: "Forehand", backhand: "Backhand", serve: "Serve", unknown: "Swing" };
 
   function renderTimeline(res) {
@@ -406,6 +447,8 @@
       ...(res.events || []).filter((e) => !e.during_swing).map((e) => ["split", e.timestamp_ms]),
       ...(res.strokes ? res.strokes.swings.map((s) => [s.stroke, s.timestamp_ms]) : []),
     ];
+    MARKS = marks.map(([, ms]) => ms).sort((a, b) => a - b);
+    ["prev-shot", "next-shot"].forEach((id) => { if ($(id)) $(id).disabled = !MARKS.length; });
     const box = $("timeline-box");
     box.hidden = !marks.length || !res.duration_ms;
     if (box.hidden) return;
@@ -681,7 +724,7 @@
   // ── Wiring ───────────────────────────────────────────────────────────────
   $("video").addEventListener("change", () => {
     const f = $("video").files[0], p = $("player");
-    if (f) { p.src = URL.createObjectURL(f); $("stage").hidden = false; }
+    if (f) { p.src = URL.createObjectURL(f); $("stage").hidden = false; if ($("playback")) $("playback").hidden = false; }
     POSE = null; drawOverlay();
     updateControls();
   });

@@ -219,6 +219,7 @@ everywhere:
 | `drill_goals` | Web app: set targets (split-step rate, consistency, recovery, ...) and see which ones each session met |
 | `rally_stats` | Group swings into rallies: shots per rally, longest rally |
 | `ready_position` | Recovery to a ready stance after each shot |
+| `playback_controls` | Web app: slow motion (½×, ¼×), previous/next shot buttons, and keys `[` `]` (shot to shot) and `,` `.` (one frame) |
 | `report_download` | Web app: download results as JSON or CSV |
 | `pose_overlay` | Web app: skeleton drawn over the video (API: `include_pose`) |
 
