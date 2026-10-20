@@ -75,6 +75,7 @@
                  border-radius: 6px; padding: .3rem .5rem; font-size: .8rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
     .chart-tip b { display: block; }
     .playback { margin-top: .5rem; }
+    #upload-card.dragging { border: 2px dashed var(--accent); padding: calc(1rem - 1px); }
     .keys { color: var(--dim); font-size: .8rem; }
     kbd { font: inherit; font-size: .75rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 .3rem; }
     [hidden] { display: none !important; }
@@ -126,8 +127,8 @@
     </div>
   </section>
 
-  <section class="card no-print">
-    <h2>2. Upload your video</h2>
+  <section class="card no-print" id="upload-card">
+    <h2>2. Upload your video <span class="tag">or drop it here</span></h2>
     <div class="row">
       <input type="file" id="video" accept="video/*">
       <button id="go" disabled>Analyse</button>
@@ -846,6 +847,22 @@
     if (f) { p.src = URL.createObjectURL(f); $("stage").hidden = false; if ($("playback")) $("playback").hidden = false; }
     POSE = null; drawOverlay();
     updateControls();
+  });
+
+  // Drag and drop a clip onto the upload card (same path as the file picker)
+  const card = $("upload-card");
+  ["dragenter", "dragover"].forEach((ev) => card.addEventListener(ev, (e) => {
+    if (![...(e.dataTransfer?.types || [])].includes("Files")) return;
+    e.preventDefault(); card.classList.add("dragging");
+  }));
+  card.addEventListener("dragleave", (e) => { if (!card.contains(e.relatedTarget)) card.classList.remove("dragging"); });
+  card.addEventListener("drop", (e) => {
+    e.preventDefault(); card.classList.remove("dragging");
+    const f = [...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(x.name));
+    if (!f) { status("That isn't a video file.", true); return; }
+    const dt = new DataTransfer(); dt.items.add(f);
+    $("video").files = dt.files;
+    $("video").dispatchEvent(new Event("change", { bubbles: true }));
   });
 
   $("go").addEventListener("click", async () => {

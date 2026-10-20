@@ -88,7 +88,7 @@ uvicorn api.main:app --reload --port 8000
 
 | URL | What it is |
 |---|---|
-| http://localhost:8000/app/ | **Tennis Trainer** web app: pick split steps, forehand, backhand, serve or match play (auto) and upload a clip. Click any timestamp or timeline marker to jump the video there. Past sessions appear in a progress table. |
+| http://localhost:8000/app/ | **Tennis Trainer** web app: pick split steps, forehand, backhand, serve or match play (auto) and upload (or drag in) a clip. Click any timestamp or timeline marker to jump the video there. Past sessions appear in a progress table. |
 | http://localhost:8000/docs | Interactive Swagger docs |
 
 ### Endpoints
