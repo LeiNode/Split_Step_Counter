@@ -287,10 +287,13 @@
   document.addEventListener("change", updateControls);
 
   // ── API calls ────────────────────────────────────────────────────────────
+  let RATE_LEFT = null;   // analyses left this hour, when the server rate-limits
   async function post(path, body, isJson = true) {
     const r = await fetch(API_URL + path, isJson
       ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
       : { method: "POST", body });
+    const left = r.headers && r.headers.get && r.headers.get("X-RateLimit-Remaining");
+    if (left != null) RATE_LEFT = +left;
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : `Request failed (${r.status})`);
     return data;
@@ -1046,7 +1049,8 @@
     $("split-results").hidden = $("stroke-results").hidden = true;
     try {
       const res = await analyse(file);
-      status(`Done in ${res.processing_s}s · ${res.frames} frames`);
+      status(`Done in ${res.processing_s}s · ${res.frames} frames`
+             + (RATE_LEFT != null && RATE_LEFT <= 5 ? ` · ${RATE_LEFT} analys${RATE_LEFT === 1 ? "is" : "es"} left this hour` : ""));
       renderGoals(res);
       renderCoach(res.coach);
       const camTips = (res.camera && res.camera.tips) || [];

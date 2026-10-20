@@ -11,7 +11,7 @@ let failures = 0;
 const check = (cond, msg) => { console.log((cond ? "ok   " : "FAIL ") + msg); if (!cond) failures++; };
 const tick = () => new Promise((r) => setTimeout(r, 30));
 
-async function load(flags, { uploadsConfigured = false, response = analysis } = {}) {
+async function load(flags, { uploadsConfigured = false, response = analysis, rateLeft = null } = {}) {
   const calls = [];
   const dom = new JSDOM(html, {
     url: "http://localhost:8000/app/", runScripts: "dangerously", pretendToBeVisual: true,
@@ -24,7 +24,8 @@ async function load(flags, { uploadsConfigured = false, response = analysis } = 
       };
       window.fetch = async (url, opts = {}) => {
         calls.push(url);
-        const json = (status, body) => ({ ok: status < 400, status, json: async () => body });
+        const json = (status, body) => ({ ok: status < 400, status, json: async () => body,
+                                          headers: { get: (h) => (h === "X-RateLimit-Remaining" ? rateLeft : null) } });
         if (url.endsWith("/v1/features")) return json(200, { features: flags });
         if (url.includes("/v1/upload-url"))
           return uploadsConfigured ? json(500, { detail: "boom" }) : json(501, { detail: "Browser uploads are not configured (UPLOAD_BUCKET unset)." });
@@ -301,6 +302,14 @@ function chooseFile(dom) {
   check(doc.getElementById("status").textContent.includes("Can't read \"soon\""), "unreadable time rejected");
   ({ dom, doc } = await load({ ...ALL, clip_range: false }));
   check(!doc.getElementById("range-row"), "range inputs removed when switched off");
+
+  // 4c. Rate limit: the remaining allowance is shown once it gets low
+  ({ dom, doc } = await load(ALL, { rateLeft: "3" }));
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  check(doc.getElementById("status").textContent.includes("3 analyses left this hour"), "low rate allowance shown");
+  ({ dom, doc } = await load(ALL, { rateLeft: "17" }));
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  check(!doc.getElementById("status").textContent.includes("left this hour"), "plenty left: not mentioned");
 
   // 5. Upload error surfaces (not silently swallowed) when uploads ARE configured
   ({ dom, doc } = await load(ALL, { uploadsConfigured: true }));

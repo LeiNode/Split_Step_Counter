@@ -88,6 +88,7 @@ if _origins:
         allow_origins=_origins,
         allow_methods=["GET", "POST"],
         allow_headers=["Content-Type", "X-API-Key"],
+        expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "Retry-After"],
     )
 
 

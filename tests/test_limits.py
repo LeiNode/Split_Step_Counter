@@ -16,8 +16,7 @@ client = TestClient(api.main.app)
 def test_sliding_window():
     now = [0.0]
     rl = RateLimiter(clock=lambda: now[0])
-    for _ in range(3):
-        rl.check("1.2.3.4", 3)
+    assert [rl.check("1.2.3.4", 3) for _ in range(3)] == [2, 1, 0]
     with pytest.raises(HTTPException) as e:
         rl.check("1.2.3.4", 3)
     assert e.value.status_code == 429 and int(e.value.headers["Retry-After"]) > 0
@@ -50,3 +49,15 @@ def test_too_long_video(tmp_path, monkeypatch):
     with open(clip, "rb") as f:
         r = client.post("/v1/count", files={"file": ("long.mp4", f, "video/mp4")})
     assert r.status_code == 413 and "limit" in r.json()["detail"]
+
+
+def test_rate_limit_headers(monkeypatch, tmp_path):
+    from tests.test_analyze import _clip as clip30
+    monkeypatch.setenv("RATE_LIMIT_PER_HOUR", "5")
+    monkeypatch.setattr("api.limits._limiter", RateLimiter())
+    clip = tmp_path / "c.mp4"
+    clip30(clip, 30, seconds=1)
+    with open(clip, "rb") as f:
+        r = client.post("/v1/count?model=rules", files={"file": ("c.mp4", f, "video/mp4")})
+    assert r.status_code == 200
+    assert r.headers["X-RateLimit-Limit"] == "5" and r.headers["X-RateLimit-Remaining"] == "4"

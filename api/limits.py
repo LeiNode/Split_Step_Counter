@@ -7,6 +7,9 @@ could forge. Each Lambda container keeps its own window, so the effective
 limit is RATE_LIMIT_PER_HOUR x the number of warm containers (capped by the
 function's reserved concurrency).
 
+Responses carry X-RateLimit-Limit and X-RateLimit-Remaining (and 429s a
+Retry-After), so clients can tell users how many analyses they have left.
+
 Running uvicorn behind your own reverse proxy? Start it with
 --proxy-headers --forwarded-allow-ips=<proxy ip> so request.client is the
 real caller, not the proxy.
@@ -17,7 +20,7 @@ import threading
 import time
 from collections import defaultdict, deque
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, Response
 
 WINDOW_S = 3600
 
@@ -28,8 +31,9 @@ class RateLimiter:
         self._hits: dict[str, deque] = defaultdict(deque)
         self._lock = threading.Lock()
 
-    def check(self, key: str, limit: int) -> None:
-        """Record a hit for key; raise 429 if it would exceed limit per WINDOW_S."""
+    def check(self, key: str, limit: int) -> int:
+        """Record a hit for key and return how many are left in the window;
+        raise 429 if it would exceed limit per WINDOW_S."""
         now = self._clock()
         with self._lock:
             q = self._hits[key]
@@ -37,19 +41,24 @@ class RateLimiter:
                 q.popleft()
             if len(q) >= limit:
                 retry = int(q[0] + WINDOW_S - now) + 1
-                raise HTTPException(status_code=429, headers={"Retry-After": str(retry)},
+                raise HTTPException(status_code=429, headers={"Retry-After": str(retry),
+                                                              "X-RateLimit-Limit": str(limit),
+                                                              "X-RateLimit-Remaining": "0"},
                                     detail=f"Rate limit: {limit} analyses per hour. Try again in {retry // 60 + 1} min.")
             q.append(now)
             if len(self._hits) > 10_000:          # forget idle clients so memory stays bounded
                 for k in [k for k, v in self._hits.items() if not v]:
                     del self._hits[k]
+            return limit - len(q)
 
 
 _limiter = RateLimiter()
 
 
-def rate_limit(request: Request) -> None:
+def rate_limit(request: Request, response: Response) -> None:
     """Dependency: enforce RATE_LIMIT_PER_HOUR (unset or 0 = no limit) per client IP."""
     limit = int(os.environ.get("RATE_LIMIT_PER_HOUR", "0") or 0)
     if limit > 0:
-        _limiter.check(request.client.host if request.client else "unknown", limit)
+        left = _limiter.check(request.client.host if request.client else "unknown", limit)
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(left)

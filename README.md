@@ -169,7 +169,7 @@ Status codes:
 | `403` | S3 key not issued by this API, or not readable |
 | `404` | S3 object missing, or the feature is switched off |
 | `413` | File too large, or video longer than `MAX_VIDEO_SECONDS` |
-| `429` | Rate limit reached (`RATE_LIMIT_PER_HOUR`) |
+| `429` | Rate limit reached (`RATE_LIMIT_PER_HOUR`). With the limit on, every analysis response carries `X-RateLimit-Limit` and `X-RateLimit-Remaining`, and a 429 also `Retry-After`. |
 | `422` | Not a readable video, or a bad parameter |
 | `501` | Uploads not configured (`UPLOAD_BUCKET` unset) |
 
