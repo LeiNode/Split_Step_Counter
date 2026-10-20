@@ -183,6 +183,15 @@ match clip, analysing every frame added 5 swings, at least 3 of them false.
 You can analyse without the server too:
 `python -m split_step.analyze practice.mp4 --model rules --drill serve`.
 
+To analyse a whole folder of clips into one spreadsheet (one row per clip:
+split steps, consistency, recovery, camera view, top tip, ...):
+
+```
+python -m split_step.batch "my clips" --drill auto --out summary.csv --json-dir reports
+```
+
+A clip that can't be read gets a row with its error; the rest still run.
+
 ### Feature switches
 
 Every major feature has an on/off switch. A switched-off feature disappears
@@ -352,6 +361,7 @@ match the new checkpoint.
 split_step/                  core package
   detector.py                 constants, pose helpers, rule-based SplitStepDetector, GUI worker base
   lstm_counter.py             SplitStepLSTM model + LSTMCounter (same interface as the detector)
+  batch.py                    analyse a folder of clips into one summary CSV
   analyze.py                  headless "video file -> results" used by the API
   pose_track.py               whole-video landmarks as numpy arrays
   tennis_metrics.py           split-step quality metrics, session summary, tips
