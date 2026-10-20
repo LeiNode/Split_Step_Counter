@@ -18,6 +18,10 @@ async function load(flags, { uploadsConfigured = false, response = analysis } = 
     beforeParse(window) {
       window.URL.createObjectURL = () => "blob:fake";
       window.HTMLMediaElement.prototype.play = () => {};
+      // jsdom's Blob has no text() (every current browser does)
+      window.Blob.prototype.text ??= function () {
+        return new Promise((r) => { const fr = new window.FileReader(); fr.onload = () => r(fr.result); fr.readAsText(this); });
+      };
       window.fetch = async (url, opts = {}) => {
         calls.push(url);
         const json = (status, body) => ({ ok: status < 400, status, json: async () => body });
@@ -200,8 +204,29 @@ function chooseFile(dom) {
   sel.value = "knee"; sel.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
   check(doc.getElementById("chart").getAttribute("aria-label").startsWith("Landing knee"), "switching metric redraws");
   const svgOut = doc.getElementById("chart").outerHTML;
+  // Export, then import into a cleared history (plus one session that's new)
+  saved = null;
+  doc.getElementById("export-history").click();
+  const exported = JSON.parse(await readBlob(saved));
+  check(exported.app === "tennis-trainer" && exported.sessions.length === 2, "history exported with both sessions");
   doc.getElementById("clear-history").click();
-  check(doc.getElementById("history").hidden, "clear history hides the section");
+  check(!doc.getElementById("history").hidden && doc.getElementById("history-table").hidden,
+        "cleared history keeps the card for importing, table hidden");
+  const older = { ...exported.sessions[1], date: "2025-01-02T10:00:00.000Z", file: "old.mp4" };
+  const importFile = async (text) => {
+    const input = doc.getElementById("import-file");
+    Object.defineProperty(input, "files", { value: [new dom.window.File([text], "h.json", { type: "application/json" })], configurable: true });
+    input.dispatchEvent(new dom.window.Event("change")); await tick();
+  };
+  await importFile(JSON.stringify({ ...exported, sessions: [...exported.sessions, older] }));
+  check(rows() === 3 && doc.getElementById("status").textContent.startsWith("Imported 3 new sessions"), "import restores sessions: " + doc.getElementById("status").textContent);
+  await importFile(JSON.stringify(exported));
+  check(rows() === 3 && doc.getElementById("status").textContent.startsWith("Imported 0 new"), "re-import adds no duplicates");
+  check(doc.querySelector("#history-table tr:last-child").textContent.includes("old.mp4"), "imported sessions sorted by date");
+  await importFile("not json");
+  check(doc.getElementById("status").className.includes("error"), "bad file reported");
+  doc.getElementById("clear-history").click();
+  check(doc.getElementById("history-table").hidden, "clear history empties the table");
   if (process.env.CHART_SVG_OUT) require("fs").writeFileSync(process.env.CHART_SVG_OUT, svgOut);
 
   // 2. Serve + auto off, rules model off

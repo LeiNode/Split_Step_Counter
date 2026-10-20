@@ -208,7 +208,12 @@
       <p class="status" id="compare-hint">Tick two sessions to compare them.</p>
       <div class="table-wrap"><table id="compare-table" hidden></table></div>
     </div>
-    <p><button class="linkish" id="clear-history">Clear history</button></p>
+    <p class="row">
+      <button class="linkish" id="export-history" data-feature="history_transfer">Export history</button>
+      <button class="linkish" id="import-history" data-feature="history_transfer">Import history…</button>
+      <input type="file" id="import-file" accept="application/json,.json" hidden>
+      <button class="linkish" id="clear-history">Clear history</button>
+    </p>
   </section>
 
   <section class="card" id="stroke-results" hidden>
@@ -753,7 +758,8 @@
     const box = $("history");
     if (!box) return;  // feature switched off
     const list = readHistory();
-    box.hidden = !list.length;
+    box.hidden = !list.length && !$("import-history");
+    $("history-table").hidden = !list.length;
     COMPARE = COMPARE.filter((d) => list.some((h) => h.date === d));
     const pick = (h) => {
       const c = document.createElement("input");
@@ -980,6 +986,34 @@
   });
 
   $("clear-history")?.addEventListener("click", () => { writeHistory([]); renderHistory(); });
+
+  // ── History export / import (move progress to another browser) ────────────
+  $("export-history")?.addEventListener("click", () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    download(`tennis-trainer-history-${stamp}.json`, "application/json",
+             JSON.stringify({ app: "tennis-trainer", version: 1, sessions: readHistory() }, null, 2));
+  });
+  $("import-history")?.addEventListener("click", () => $("import-file").click());
+  $("import-file")?.addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      const incoming = (Array.isArray(data) ? data : data.sessions || [])
+        .filter((h) => h && typeof h.date === "string" && !isNaN(Date.parse(h.date)));
+      if (!incoming.length) throw new Error("no sessions in that file");
+      // Merge by date (a session's id), newest first, capped like normal saves
+      const byDate = new Map([...readHistory(), ...incoming].map((h) => [h.date, h]));
+      const merged = [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
+      const added = merged.length - readHistory().length;
+      writeHistory(merged);
+      renderHistory();
+      status(`Imported ${added} new session${added === 1 ? "" : "s"}` + (merged.length > HISTORY_MAX ? ` (keeping the latest ${HISTORY_MAX})` : "") + ".");
+    } catch (err) {
+      status("Couldn't import history: " + err.message, true);
+    }
+  });
   $("chart-metric")?.addEventListener("change", renderChart);
   $("dl-json")?.addEventListener("click", () => download(reportName("json"), "application/json", JSON.stringify(LAST.res, null, 2)));
   $("print-report")?.addEventListener("click", () => {

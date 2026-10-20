@@ -233,6 +233,7 @@ everywhere:
 | `live_view` | Webcam button in the desktop GUI |
 | `audio_cues` | Desktop GUI: a high beep for each split step, a lower one for each swing (with a checkbox to mute) |
 | `session_history` | Web app: progress table and chart of past sessions, saved in the browser |
+| `history_transfer` | Web app: export your history to a JSON file and import it in another browser or device (merged, no duplicates) |
 | `session_compare` | Web app: tick two past sessions to compare every metric side by side, marked better / worse (needs `session_history`) |
 | `drill_goals` | Web app: set targets (split-step rate, consistency, recovery, ...) and see which ones each session met |
 | `swing_chart` | Web app: each swing's wrist speed through the clip, coloured by stroke; click a dot to watch it |
