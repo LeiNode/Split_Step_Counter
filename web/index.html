@@ -148,6 +148,10 @@
     <ol id="coach-focus"></ol>
     <p class="status" id="coach-strengths-title">Going well:</p>
     <ul class="tips" id="coach-strengths"></ul>
+    <div id="practice" data-feature="practice_plan" hidden>
+      <h2>Next session: try these drills</h2>
+      <ol id="practice-list"></ol>
+    </div>
   </section>
 
   <section class="card" id="goal-results" data-feature="drill_goals" hidden>
@@ -510,6 +514,18 @@
     $("coach-strengths").replaceChildren(...c.strengths.map(li));
     $("coach-focus-title").hidden = !c.focus.length;
     $("coach-strengths-title").hidden = !c.strengths.length;
+    if ($("practice")) {
+      const drills = c.drills || [];
+      $("practice-list").replaceChildren(...drills.map((d) => {
+        const item = document.createElement("li");
+        item.innerHTML = "<b></b> <span class=\"tag\"></span><br><span></span>";
+        item.querySelector("b").textContent = d.name;
+        item.querySelector(".tag").textContent = d.dose;
+        item.lastElementChild.textContent = d.how;
+        return item;
+      }));
+      $("practice").hidden = !drills.length;
+    }
   }
 
   // ── Drill goals (this browser only) ──────────────────────────────────────

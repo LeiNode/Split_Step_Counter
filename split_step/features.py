@@ -23,6 +23,7 @@ import os
 DEFAULTS: dict[str, tuple[bool, str]] = {
     "split_step_counting": (True,  "Count split steps (the core feature)"),
     "coach_summary":       (True,  "Prioritised summary: top things to work on + strengths"),
+    "practice_plan":       (True,  "Drills for the next session, one per focus point of the coach's summary"),
     "footwork":            (True,  "Step counting: steps per minute, adjustment steps between shots"),
     "fatigue_trend":       (True,  "Compare the start and end of long sessions: does the player fade?"),
     "camera_view_check":   (True,  "Detect the camera angle and warn when it's one the model handles poorly"),
@@ -60,6 +61,7 @@ PARENTS = {
     "rally_stats": ("stroke_training",),
     "swing_highlights": ("stroke_training",),
     "session_compare": ("session_history",),
+    "practice_plan": ("coach_summary",),
     "ready_position": ("stroke_training",),
 }
 

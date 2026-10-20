@@ -33,6 +33,7 @@ from .coach import coach_summary
 from .fatigue import fatigue_report
 from .footwork import footwork_report
 from .highlights import stroke_highlights
+from .practice import practice_plan
 from .rallies import find_rallies
 from .ready_position import recovery
 from .timing import link_split_steps
@@ -68,7 +69,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                   include_pose: bool = False, ready_position: bool = True,
                   camera_view_check: bool = True, footwork: bool = True,
                   coach: bool = True, fatigue: bool = True,
-                  highlights: bool = True, max_fps: float | None = 30.0,
+                  highlights: bool = True, practice: bool = True, max_fps: float | None = 30.0,
                   max_seconds: float | None = None) -> dict:
     """Analyse a video file.
 
@@ -90,6 +91,7 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
     highlights         — with a drill: typical / fastest / odd-one-out swing per stroke
     fatigue            — compare the first and last third of the session (fatigue.py)
     coach              — prioritised summary of all tips (coach.py)
+    practice           — with coach: drills for the focus tips (practice.py)
     max_fps            — analyse at most this many frames per second (None = all).
                          The LSTM was trained on ~30 fps footage and the rules
                          detector's thresholds are per frame, so higher-fps video
@@ -126,7 +128,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
         fatigue — early vs late medians of hop height, knee bend, swing speed,
                   recovery; only measured on sessions of 2+ minutes
     With coach:
-        coach   — {focus: top tips to work on, strengths, more}
+        coach   — {focus: top tips to work on, strengths, more}; with practice
+                  also drills: [{name, how, dose, for}]
     With camera_view_check:
         camera  — dominant view (back/front/side), per-view shares, warning tip
     With include_pose:
@@ -229,6 +232,8 @@ def analyze_video(video_path: str, model: str = "lstm", require_full_pose: bool 
                                            last_ts_ms)
     if coach:
         result["coach"] = coach_summary(result)
+        if practice:
+            result["coach"]["drills"] = practice_plan(result["coach"]["focus"])
 
     result.update({
         "frames":           frames,

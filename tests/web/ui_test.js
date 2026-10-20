@@ -193,6 +193,8 @@ function chooseFile(dom) {
   check(!doc.getElementById("goal-settings") && !doc.getElementById("goal-results"), "goals removed when switched off");
   ({ dom, doc } = await load({ ...ALL, coach_summary: false }));
   check(!doc.getElementById("coach"), "coach summary removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, practice_plan: false }));
+  check(doc.getElementById("coach") && !doc.getElementById("practice"), "practice plan removed on its own");
   ({ dom, doc, calls } = await load({ ...ALL, session_history: false, report_download: false, pose_overlay: false, drill_goals: false }));
   check(!doc.getElementById("history"), "history section removed when switched off");
   check(!doc.getElementById("overlay") && !doc.getElementById("show-skeleton"), "overlay removed when switched off");
@@ -233,8 +235,11 @@ function chooseFile(dom) {
   const sw = analysis.strokes.swings;
   const highlights = { forehand: { typical: { timestamp_ms: sw[0].timestamp_ms }, fastest: { timestamp_ms: sw[1].timestamp_ms },
                                    outlier: { timestamp_ms: sw[2].timestamp_ms, label: "contact height 1.10, usually 0.43" } } };
-  ({ dom, doc } = await load(ALL, { response: { ...analysis, fatigue, highlights } }));
+  const drills = [{ name: "Watch the strings", how: "Keep your eyes on the contact point.", dose: "2 sets of 10 balls", for: "..." }];
+  ({ dom, doc } = await load(ALL, { response: { ...analysis, fatigue, highlights, coach: { ...analysis.coach, drills } } }));
   chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  check(!doc.getElementById("practice").hidden && doc.getElementById("practice-list").textContent.includes("Watch the strings 2 sets of 10 balls"),
+        "practice drills listed: " + doc.getElementById("practice-list").textContent);
   const hl = doc.getElementById("highlight-list");
   check(!doc.getElementById("highlights").hidden && hl.querySelectorAll("a.ts").length === 3, "highlights listed with 3 seek links");
   check(hl.textContent.includes("odd one out") && hl.textContent.includes("usually 0.43"), "outlier explained: " + hl.textContent);

@@ -142,7 +142,7 @@ class AnalysisOptions:
                            ready_position=flags["ready_position"],
                            camera_view_check=flags["camera_view_check"],
                            footwork=flags["footwork"], fatigue=flags["fatigue_trend"],
-                           highlights=flags["swing_highlights"],
+                           highlights=flags["swing_highlights"], practice=flags["practice_plan"],
                            coach=flags["coach_summary"])
 
 

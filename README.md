@@ -35,7 +35,8 @@ analyses run on them:
   behind, the front or the side, and warns when the split-step model is less
   reliable for that view.
 - **Coaching tips** in plain language, based on the metrics above, with a
-  **coach's summary** of the top 3 things to work on.
+  **coach's summary** of the top 3 things to work on, and a **practice plan**:
+  a drill for each of them, with how to do it and how many reps.
 
 Use it four ways:
 - the **Tennis Trainer web app**
@@ -210,6 +211,7 @@ everywhere:
 | `split_step_counting` | Split-step counting (parent of `split_step_metrics`) |
 | `split_step_metrics` | Per-split-step quality metrics and session summary |
 | `coach_summary` | Prioritised summary: the top 3 things to work on, plus strengths |
+| `practice_plan` | Drills for the next session, one per focus point of the coach's summary (needs `coach_summary`) |
 | `footwork` | Step counting: steps per minute, adjustment steps between shots |
 | `fatigue_trend` | Compare the start and end of sessions of 2+ minutes: does the player fade? |
 | `camera_view_check` | Detect the camera angle; warn when it's one the model handles poorly |
@@ -382,6 +384,7 @@ split_step/                  core package
   fatigue.py                  early vs late session comparison
   camera_view.py              camera-angle detection
   coach.py                    prioritised coach's summary of all tips
+  practice.py                 drills for the coach's focus points
   features.py                 feature switches
   app.py                      tkinter GUI
   video_analysis.py           GUI worker for video files
