@@ -1,0 +1,1177 @@
+<!doctype html>
+<!--
+  Tennis Trainer: browser client for the Split Step Counter API.
+
+  Local:  uvicorn api.main:app --port 8000, then open http://localhost:8000/app/
+          (served by the API itself, so API_URL can stay empty).
+  Hosted: copy this file to your site, set API_URL to your Lambda Function URL,
+          and list your site's origin in the API's ALLOWED_ORIGINS.
+
+  Every element with data-feature="<name>" is removed when GET /v1/features
+  reports that feature switched off.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tennis Trainer</title>
+  <style>
+    :root { --bg:#f6f7f4; --card:#fff; --ink:#1d2421; --dim:#5f6b66; --line:#dde2de; --accent:#2f7d4f; --warn:#b5651d;
+            /* stroke identity: validated all-pairs for colour-vision deficiency, per theme */
+            --s-forehand:#2a78d6; --s-backhand:#eb6834; --s-serve:#1baf7a; --s-unknown:#8a948f; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#141816; --card:#1d2320; --ink:#e6ebe8; --dim:#9aa6a0; --line:#2e3632; --accent:#5cc488; --warn:#e3a35b;
+              --s-forehand:#3987e5; --s-backhand:#d95926; --s-serve:#199e70; --s-unknown:#7d8782; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, sans-serif; }
+    main { max-width: 56rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+    h1 { margin: 0 0 .25rem; font-size: 1.6rem; }
+    h2 { font-size: 1.1rem; margin: 0 0 .75rem; }
+    .sub { color: var(--dim); margin: 0 0 1.25rem; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; margin-bottom: 1rem; }
+    .modes { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .75rem; }
+    .modes label { border: 1px solid var(--line); border-radius: 999px; padding: .35rem .85rem; cursor: pointer; }
+    .modes input { margin-right: .35rem; }
+    .row { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; align-items: center; }
+    button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: .6rem 1.2rem; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: default; }
+    select, input[type=file] { font: inherit; color: inherit; }
+    .stage { position: relative; margin-top: .75rem; }
+    video { display: block; width: 100%; max-height: 24rem; background: #000; border-radius: 8px; }
+    #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .big { font-size: 2.6rem; font-weight: 700; line-height: 1; }
+    .stats { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-bottom: .75rem; }
+    .stats div span { display: block; color: var(--dim); font-size: .8rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
+    th { color: var(--dim); font-weight: 500; }
+    .table-wrap { overflow-x: auto; }
+    a.ts { color: var(--accent); cursor: pointer; text-decoration: underline; }
+    ul.tips { margin: .5rem 0 0; padding-left: 1.2rem; }
+    ul.tips li { margin: .2rem 0; }
+    .status { color: var(--dim); min-height: 1.5em; }
+    .error { color: var(--warn); }
+    .tag { font-size: .75rem; padding: .05rem .4rem; border-radius: 4px; border: 1px solid var(--line); color: var(--dim); }
+    .timeline { position: relative; height: 28px; margin-top: .5rem; border-radius: 6px; background: var(--line); }
+    .timeline .mk { position: absolute; top: 3px; width: 6px; height: 22px; margin-left: -3px; border-radius: 3px; border: 0; padding: 0; cursor: pointer; }
+    .legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .8rem; color: var(--dim); margin-top: .35rem; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: .3rem; vertical-align: -1px; }
+    /* Split steps aren't strokes: neutral ink and a shorter mark, not a fourth hue */
+    .k-split { background: var(--ink); } .timeline .mk.k-split { top: 8px; height: 12px; }
+    .k-forehand { background: var(--s-forehand); } .k-backhand { background: var(--s-backhand); }
+    .k-serve { background: var(--s-serve); } .k-unknown { background: var(--s-unknown); }
+    .speed-chart { position: relative; margin: .25rem 0 1rem; }
+    .speed-chart svg { display: block; width: 100%; height: auto; aspect-ratio: 600 / 180; overflow: visible; }
+    .speed-chart .grid { stroke: var(--line); stroke-width: 1; }
+    .speed-chart .axis-label { fill: var(--dim); font-size: 11px; }
+    .speed-chart .dot { stroke: var(--card); stroke-width: 2; cursor: pointer; }
+    .speed-chart .dot:focus { outline: none; stroke: var(--ink); }
+    .speed-chart .hit { fill: transparent; cursor: pointer; }
+    .linkish { background: none; color: var(--dim); border: 1px solid var(--line); padding: .3rem .7rem; font-weight: 400; }
+    .notice { border-color: var(--warn); color: var(--warn); }
+    .goals-form { display: grid; grid-template-columns: 1fr auto; gap: .35rem 1rem; align-items: center; margin-top: .5rem; }
+    .goals-form input { width: 5.5rem; font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: .2rem .4rem; }
+    ul.goal-list { list-style: none; padding: 0; margin: 0; }
+    ul.goal-list li { padding: .3rem 0; border-bottom: 1px solid var(--line); }
+    .met { color: var(--accent); font-weight: 600; } .unmet { color: var(--warn); font-weight: 600; }
+    .chart-wrap { position: relative; margin: .5rem 0 1rem; }
+    .chart-wrap svg { display: block; width: 100%; height: auto; aspect-ratio: 600 / 220; overflow: visible; }
+    .chart-wrap .grid { stroke: var(--line); stroke-width: 1; }
+    .chart-wrap .axis-label { fill: var(--dim); font-size: 11px; }
+    .chart-wrap .series { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+    .chart-wrap .pt { fill: var(--accent); stroke: var(--card); stroke-width: 2; }
+    .chart-wrap .pt:focus { outline: none; stroke: var(--ink); }
+    .chart-wrap .crosshair { stroke: var(--dim); stroke-width: 1; }
+    .chart-tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line);
+                 border-radius: 6px; padding: .3rem .5rem; font-size: .8rem; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+    .chart-tip b { display: block; }
+    .playback { margin-top: .5rem; }
+    .sbs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; margin-top: .5rem; }
+    .sbs-grid figure { margin: 0; }
+    .sbs-grid video { max-height: 18rem; }
+    .sbs-grid figcaption { color: var(--dim); font-size: .8rem; margin-top: .2rem; }
+    @media (max-width: 34rem) { .sbs-grid { grid-template-columns: 1fr; } }
+    input.time { font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: .2rem .4rem; }
+    input.note { font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 4px;
+                 padding: .1rem .3rem; width: 100%; min-width: 8rem; }
+    input.note:hover, input.note:focus { border-color: var(--line); background: var(--card); }
+    input.note::placeholder { color: var(--dim); opacity: .7; }
+    tr.current td { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+    tr.current td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+    #upload-card.dragging { border: 2px dashed var(--accent); padding: calc(1rem - 1px); }
+    .keys { color: var(--dim); font-size: .8rem; }
+    kbd { font: inherit; font-size: .75rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 .3rem; }
+    [hidden] { display: none !important; }
+    /* Printing (or "Save as PDF") gives a clean results report: no controls or video */
+    @media print {
+      :root { --bg:#fff; --card:#fff; --ink:#000; --dim:#444; --line:#ccc; --accent:#1d5e37; --warn:#8a4a10; }
+      body { font-size: 11pt; }
+      main { max-width: none; padding: 0; }
+      .no-print, button, select, input, details, #stage, #playback, #timeline-box, #compare, #chart-wrap, #chart-empty,
+      label[data-feature="pose_overlay"], .modes, #model-picker, label[data-feature="stroke_training"] { display: none !important; }
+      .card { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: .5rem 0; }
+      h2 { break-after: avoid; }
+      tr { break-inside: avoid; }
+      table.has-compare tr > :first-child { display: none; }
+      input.note { display: inline-block !important; border: 0; padding: 0; }
+      input.note:placeholder-shown { visibility: hidden; }
+      .table-wrap { overflow: visible; }
+      a.ts { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Tennis Trainer</h1>
+  <p class="sub no-print">Upload a clip. Get split-step counts, stroke metrics and coaching tips.</p>
+
+  <section class="card no-print">
+    <h2>1. What are you practising?</h2>
+    <div class="modes" id="modes">
+      <label data-feature="split_step_counting"><input type="radio" name="mode" value="split" checked>Split steps</label>
+      <label data-feature="forehand_training"><input type="radio" name="mode" value="forehand">Forehand</label>
+      <label data-feature="backhand_training"><input type="radio" name="mode" value="backhand">Backhand</label>
+      <label data-feature="serve_training"><input type="radio" name="mode" value="serve">Serve</label>
+      <label data-feature="auto_stroke_detection"><input type="radio" name="mode" value="auto">Match play (auto) <span class="tag">beta</span></label>
+    </div>
+    <div class="row">
+      <label data-feature="stroke_training">Hitting hand
+        <select id="hand"><option value="auto">Detect</option><option value="right">Right</option><option value="left">Left</option></select>
+      </label>
+      <details data-feature="drill_goals" id="goal-settings">
+        <summary>Goals</summary>
+        <p class="status">Leave a box empty to skip that goal. Saved in this browser.</p>
+        <div class="goals-form" id="goals-form"></div>
+      </details>
+      <label id="model-picker">Split-step model
+        <select id="model">
+          <option value="lstm" data-feature="lstm_model">LSTM</option>
+          <option value="rules" data-feature="rules_model">Rule-based</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="card no-print" id="upload-card">
+    <h2>2. Upload your video <span class="tag">or drop it here</span></h2>
+    <div class="row">
+      <input type="file" id="video" accept="video/*">
+      <button id="go" disabled>Analyse</button>
+    </div>
+    <p class="row" id="range-row" data-feature="clip_range">
+      <label>Only analyse from <input id="range-start" class="time" placeholder="0:00" inputmode="decimal" size="7"></label>
+      <label>to <input id="range-end" class="time" placeholder="end" inputmode="decimal" size="7"></label>
+      <span class="keys">seconds or m:ss, e.g. 12:30</span>
+    </p>
+    <p class="status" id="status"></p>
+    <p class="row" id="downloads" data-feature="report_download" hidden>
+      <button class="linkish" id="dl-json">Download report (JSON)</button>
+      <button class="linkish" id="dl-csv">Download shots (CSV)</button>
+      <button class="linkish" id="dl-md" data-feature="markdown_report">Download report (Markdown)</button>
+      <button class="linkish" id="print-report">Print / save as PDF</button>
+    </p>
+    <div class="stage" id="stage" hidden>
+      <video id="player" controls playsinline></video>
+      <canvas id="overlay" data-feature="pose_overlay"></canvas>
+    </div>
+    <div class="row playback" id="playback" data-feature="playback_controls" hidden>
+      <button class="linkish" id="prev-shot" disabled title="Previous shot ( [ )">◀ Previous</button>
+      <button class="linkish" id="next-shot" disabled title="Next shot ( ] )">Next ▶</button>
+      <label>Speed <select id="speed"><option value="1">1×</option><option value="0.5">0.5×</option><option value="0.25">0.25×</option></select></label>
+      <span class="keys">Keys: <kbd>[</kbd> <kbd>]</kbd> previous / next shot · <kbd>,</kbd> <kbd>.</kbd> one frame back / forward</span>
+    </div>
+    <label data-feature="pose_overlay"><input type="checkbox" id="show-skeleton" checked> Show skeleton</label>
+    <div id="timeline-box" hidden>
+      <div class="timeline" id="timeline" aria-label="Shot timeline"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </section>
+
+  <section class="card notice" id="camera-notice" hidden></section>
+
+  <section class="card" id="coach" data-feature="coach_summary" hidden>
+    <h2>Coach's summary</h2>
+    <p class="status" id="coach-focus-title">Work on these first:</p>
+    <ol id="coach-focus"></ol>
+    <p class="status" id="coach-strengths-title">Going well:</p>
+    <ul class="tips" id="coach-strengths"></ul>
+    <div id="practice" data-feature="practice_plan" hidden>
+      <h2>Next session: try these drills</h2>
+      <ol id="practice-list"></ol>
+    </div>
+  </section>
+
+  <section class="card" id="goal-results" data-feature="drill_goals" hidden>
+    <h2>Goals</h2>
+    <ul class="goal-list" id="goal-list"></ul>
+  </section>
+
+  <section class="card" id="split-results" hidden>
+    <h2>Split steps</h2>
+    <div class="stats" id="split-stats"></div>
+    <div class="table-wrap"><table id="split-table"></table></div>
+    <ul class="tips" id="split-tips"></ul>
+  </section>
+
+  <section class="card" id="history" data-feature="session_history" data-notes="on" hidden>
+    <h2>Your progress <span class="tag">saved in this browser</span></h2>
+    <label class="no-print">Chart <select id="chart-metric"></select></label>
+    <div class="chart-wrap" id="chart-wrap">
+      <svg id="chart" role="img" aria-label="Progress chart"></svg>
+      <div class="chart-tip" id="chart-tip" hidden></div>
+    </div>
+    <p class="status" id="chart-empty" hidden></p>
+    <div class="table-wrap"><table id="history-table"></table></div>
+    <div id="compare" data-feature="session_compare">
+      <p class="status" id="compare-hint">Tick two sessions to compare them.</p>
+      <div class="table-wrap"><table id="compare-table" hidden></table></div>
+    </div>
+    <p class="row">
+      <button class="linkish" id="export-history" data-feature="history_transfer">Export history</button>
+      <button class="linkish" id="import-history" data-feature="history_transfer">Import history…</button>
+      <input type="file" id="import-file" accept="application/json,.json" hidden>
+      <button class="linkish" id="clear-history">Clear history</button>
+    </p>
+  </section>
+
+  <section class="card" id="stroke-results" hidden>
+    <h2 id="stroke-title">Strokes</h2>
+    <div class="stats" id="stroke-stats"></div>
+    <div id="speed-box" data-feature="swing_chart" hidden>
+      <p class="status">Wrist speed of each swing through the clip (click a dot to watch it):</p>
+      <div class="legend" id="speed-legend"></div>
+      <div class="speed-chart">
+        <svg id="speed-chart" role="img"></svg>
+        <div class="chart-tip" id="speed-tip" hidden></div>
+      </div>
+    </div>
+    <div id="highlights" data-feature="swing_highlights" hidden>
+      <p class="status">Worth watching back:</p>
+      <ul class="tips" id="highlight-list"></ul>
+      <div id="sbs" data-feature="side_by_side" hidden>
+        <div class="sbs-grid">
+          <figure><video id="sbs-a" muted playsinline></video><figcaption id="sbs-a-cap"></figcaption></figure>
+          <figure><video id="sbs-b" muted playsinline></video><figcaption id="sbs-b-cap"></figcaption></figure>
+        </div>
+        <p class="row"><button class="linkish" id="sbs-replay">Replay</button><button class="linkish" id="sbs-close">Close</button>
+          <span class="keys">Both play at ¼ speed from 1 s before the shot.</span></p>
+      </div>
+    </div>
+    <div class="table-wrap"><table id="stroke-table"></table></div>
+    <ul class="tips" id="stroke-tips"></ul>
+  </section>
+</main>
+
+<script>
+  // Empty = same origin (page served by the API at /app/). Otherwise e.g.
+  // "https://abc123.lambda-url.us-east-1.on.aws" (no trailing slash).
+  const API_URL = "";
+
+  const $ = (id) => document.getElementById(id);
+  let FLAGS = {};
+
+  // ── Feature switches ─────────────────────────────────────────────────────
+  async function loadFeatures() {
+    try {
+      const r = await fetch(API_URL + "/v1/features");
+      FLAGS = (await r.json()).features || {};
+    } catch { FLAGS = {}; }  // unreachable API: show everything, errors surface on submit
+    document.querySelectorAll("[data-feature]").forEach((el) => {
+      if (FLAGS[el.dataset.feature] === false) el.remove();
+    });
+    if (FLAGS.session_notes === false && $("history")) $("history").dataset.notes = "off";
+    const first = document.querySelector('input[name="mode"]');
+    if (first) first.checked = true;
+    if (!document.querySelector('#model option')) $("model-picker").remove();
+    if (!first) $("status").textContent = "All analysis features are switched off on this server.";
+    updateControls();
+  }
+
+  function mode() { return document.querySelector('input[name="mode"]:checked')?.value; }
+
+  function updateControls() {
+    const m = mode();
+    const picker = $("model-picker");
+    // The split-step model only matters when split steps are counted
+    if (picker) picker.hidden = FLAGS.split_step_counting === false;
+    $("go").disabled = !m || !$("video").files[0];
+  }
+  document.addEventListener("change", updateControls);
+
+  // ── API calls ────────────────────────────────────────────────────────────
+  let RATE_LEFT = null;   // analyses left this hour, when the server rate-limits
+  async function post(path, body, isJson = true) {
+    const r = await fetch(API_URL + path, isJson
+      ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      : { method: "POST", body });
+    const left = r.headers && r.headers.get && r.headers.get("X-RateLimit-Remaining");
+    if (left != null) RATE_LEFT = +left;
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : `Request failed (${r.status})`);
+    return data;
+  }
+
+  // "75", "75.5", "1:15" or "1:01:15" -> seconds; "" -> null
+  function parseTime(text) {
+    const t = text.trim();
+    if (!t) return null;
+    if (!/^\d+(\.\d+)?(:\d{1,2}(\.\d+)?){0,2}$/.test(t)) throw new Error(`Can't read "${t}" as a time (use seconds or m:ss).`);
+    return t.split(":").reduce((acc, p) => acc * 60 + +p, 0);
+  }
+
+  function queryString() {
+    const m = mode(), q = new URLSearchParams();
+    if ($("range-start")) {
+      const start = parseTime($("range-start").value), end = parseTime($("range-end").value);
+      if (start != null && end != null && end <= start) throw new Error("The end time must be after the start time.");
+      if (start) q.set("start_s", start);
+      if (end != null) q.set("end_s", end);
+    }
+    if ($("model")) q.set("model", $("model").value);
+    if (m !== "split") q.set("drill", m);
+    if ($("hand") && m !== "split") q.set("hand", $("hand").value);
+    if ($("overlay")) q.set("include_pose", "true");
+    return q.toString();
+  }
+
+  async function analyse(file) {
+    const qs = queryString();
+    if (FLAGS.browser_uploads !== false) {
+      try {
+        const ticket = await post("/v1/upload-url", { filename: file.name });
+        if (file.size > ticket.max_bytes) throw new Error(`Video too large (max ${Math.round(ticket.max_bytes / 1048576)} MB).`);
+        status("Uploading…");
+        const form = new FormData();
+        Object.entries(ticket.fields).forEach(([k, v]) => form.append(k, v));
+        form.append("file", file);
+        const up = await fetch(ticket.url, { method: "POST", body: form });
+        if (!up.ok) throw new Error(`Upload failed (${up.status})`);
+        status("Analysing… (the first request after a while can take ~20 s)");
+        return await post(`/v1/count/s3?${qs}`, { bucket: ticket.bucket, key: ticket.key });
+      } catch (e) {
+        // 501 = server has no upload bucket (e.g. running locally): fall back to direct upload
+        if (!/not configured/.test(e.message) || FLAGS.direct_upload === false) throw e;
+      }
+    }
+    status("Uploading and analysing…");
+    const form = new FormData();
+    form.append("file", file);
+    return post(`/v1/count?${qs}`, form, false);
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────────────
+  function status(text, isError = false) {
+    $("status").textContent = text;
+    $("status").className = "status" + (isError ? " error" : "");
+  }
+  const fmt = (v, digits = 2, unit = "") => (v === null || v === undefined) ? "–" : `${(+v).toFixed(digits)}${unit}`;
+  const sec = (ms) => (ms / 1000).toFixed(2) + " s";
+  // [start, end] ms of what was analysed (all of it, or the chosen part)
+  const span = (res) => [res.range_ms ? res.range_ms[0] : 0, res.duration_ms];
+  const pct = (change) => (change > 0 ? "+" : change < 0 ? "−" : "") + Math.abs(Math.round(change * 100)) + "%";
+
+  function seekLink(ms) {
+    const a = document.createElement("a");
+    a.className = "ts"; a.textContent = sec(ms);
+    a.onclick = () => { const p = $("player"); p.currentTime = Math.max(0, ms / 1000 - LEAD_S); p.play(); };
+    return a;
+  }
+
+  function stat(label, value) {
+    const d = document.createElement("div");
+    d.innerHTML = "<span></span><b></b>";
+    d.querySelector("span").textContent = label;
+    d.querySelector("b").textContent = value;
+    return d;
+  }
+
+  function fillTable(table, columns, rows) {
+    table.replaceChildren();
+    const head = table.insertRow();
+    columns.forEach(([title]) => { const th = document.createElement("th"); th.textContent = title; head.appendChild(th); });
+    rows.forEach((row) => {
+      const tr = table.insertRow();
+      columns.forEach(([, render]) => {
+        const td = tr.insertCell(), v = render(row);
+        v instanceof Node ? td.appendChild(v) : (td.textContent = v);
+      });
+    });
+  }
+
+  function fillTips(ul, tips) {
+    ul.replaceChildren(...(tips || []).map((t) => { const li = document.createElement("li"); li.textContent = t; return li; }));
+  }
+
+  function renderSplit(res) {
+    const box = $("split-results");
+    box.hidden = res.count === undefined;
+    if (box.hidden) return;
+    const s = res.session || {};
+    $("split-stats").replaceChildren(
+      stat("Split steps", res.count),
+      ...(s.split_steps_per_minute !== undefined ? [stat("Per minute", fmt(s.split_steps_per_minute, 1))] : []),
+      ...(s.interval_s ? [stat("Typical gap", fmt(s.interval_s.median, 1, " s"))] : []),
+      ...(s.landing_knee_angle ? [stat("Landing knee bend", fmt(s.landing_knee_angle.median, 0, "°"))] : []),
+      ...(res.footwork ? [stat("Steps per minute", fmt(res.footwork.steps_per_minute, 0))] : []),
+      ...(res.fatigue && res.fatigue.metrics.hop_height ? [stat("Hop height, late vs early", pct(res.fatigue.metrics.hop_height.change))] : []),
+    );
+    const cols = [["Time", (e) => seekLink(e.timestamp_ms)]];
+    if (res.timing) cols.push(["", (e) => e.during_swing ? "hop during a swing" : ""]);
+    if (res.session) cols.push(
+      ["Hop height", (e) => fmt(e.hop_height)],
+      ["Knee angle", (e) => fmt(e.landing_knee_angle, 0, "°")],
+      ["Stance (× shoulders)", (e) => fmt(e.landing_stance_ratio)]);
+    fillTable($("split-table"), cols, res.events);
+    // Without strokes there's no stroke-tips list, so fatigue tips go here
+    fillTips($("split-tips"), [...(s.tips || []), ...(!res.strokes && res.fatigue ? res.fatigue.tips : [])]);
+  }
+
+  function renderStrokes(res) {
+    const box = $("stroke-results");
+    box.hidden = !res.strokes;
+    if (box.hidden) return;
+    const st = res.strokes, serve = st.drill === "serve";
+    $("stroke-title").textContent = st.drill === "auto" ? "Strokes" : st.drill[0].toUpperCase() + st.drill.slice(1) + " training";
+    const counts = Object.entries(st.summary).map(([k, v]) => stat(k[0].toUpperCase() + k.slice(1) + "s", v.count));
+    const scores = Object.entries(st.summary).filter(([, v]) => v.consistency != null)
+      .map(([k, v]) => stat(k[0].toUpperCase() + k.slice(1) + " consistency", v.consistency + "/100"));
+    const t = res.timing;
+    $("stroke-stats").replaceChildren(stat("Swings", st.swings.length), stat("Hand", st.hand), ...counts, ...scores,
+      ...(t && t.shots ? [stat("Split step before shot", `${t.shots_with_split_step} of ${t.shots}`)] : []),
+      ...(res.rallies && res.rallies.summary.rallies ? [stat("Rallies", res.rallies.summary.rallies),
+                                                         stat("Longest rally", res.rallies.summary.longest + " shots")] : []),
+      ...(res.recovery && res.recovery.median_recovery_ms != null ? [stat("Recovery", fmt(res.recovery.median_recovery_ms / 1000, 1, " s"))] : []),
+      ...(res.fatigue && res.fatigue.metrics.peak_wrist_speed ? [stat("Swing speed, late vs early", pct(res.fatigue.metrics.peak_wrist_speed.change))] : []));
+    const cols = [["Time", (s) => seekLink(s.timestamp_ms)], ["Stroke", (s) => s.stroke]];
+    if (res.rallies) cols.push(["Rally", (s) => s.rally]);
+    if (res.footwork) cols.push(["Steps before", (s) => s.steps_before ?? "–"]);
+    if (res.recovery) cols.push(["Back to ready", (s) => s.recovery_ms == null ? "–" : fmt(s.recovery_ms / 1000, 1, " s")]);
+    cols.push(["Wrist speed", (s) => fmt(s.peak_wrist_speed, 1, " m/s")]);
+    if (serve) cols.push(["Reach", (s) => fmt(s.contact_reach_m, 2, " m")], ["Toss", (s) => fmt(s.toss_height_m, 2, " m")], ["Toss release (side)", (s) => fmt(s.toss_lateral_m, 2, " m")],
+                         ["Elbow", (s) => fmt(s.elbow_extension, 0, "°")], ["Trophy knee", (s) => fmt(s.trophy_knee_angle, 0, "°")]);
+    else cols.push(["Contact height", (s) => fmt(s.contact_height)], ["Shoulder turn", (s) => fmt(s.shoulder_turn_deg, 0, "°")],
+                   ["Finish", (s) => fmt(s.finish_above_shoulder_m, 2, " m")], ["Knee load", (s) => fmt(s.load_knee_angle, 0, "°")],
+                   ["Head movement", (s) => s.head_movement_m == null ? "–" : fmt(s.head_movement_m * 100, 0, " cm")],
+                   ["Turned before contact", (s) => s.prep_lead_ms == null ? "–" : fmt(s.prep_lead_ms / 1000, 1, " s")]);
+    if (t) cols.push(["Split step before", (s) => s.split_step_lead_ms == null ? "none" : fmt(s.split_step_lead_ms / 1000, 1, " s")]);
+    fillTable($("stroke-table"), cols, st.swings);
+    fillTips($("stroke-tips"), [...st.tips, ...(t ? t.tips : []), ...(res.rallies ? res.rallies.summary.tips : []),
+                                 ...(res.recovery ? res.recovery.tips : []),
+                                 ...(res.footwork ? res.footwork.tips : []),
+                                 ...(res.fatigue ? res.fatigue.tips : [])]);
+  }
+
+  // ── Swing speed through the clip (dot per swing, colour = stroke) ────────
+  function renderSpeedChart(res) {
+    const box = $("speed-box");
+    if (!box) return;
+    const sw = res.strokes ? res.strokes.swings.filter((s) => s.peak_wrist_speed != null) : [];
+    box.hidden = sw.length < 2 || !res.duration_ms;
+    if (box.hidden) return;
+    const svg = $("speed-chart"), tip = $("speed-tip");
+    svg.replaceChildren(); tip.hidden = true;
+    const W = 600, H = 180, L = 40, R = 10, T = 10, B = 24;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    const [t0, t1] = span(res);
+    svg.setAttribute("aria-label", `Wrist speed of ${sw.length} swings from ${sec(t0)} to ${sec(t1)}`);
+    const v = sw.map((s) => s.peak_wrist_speed);
+    const lo = Math.max(0, Math.floor(Math.min(...v) - 1)), hi = Math.ceil(Math.max(...v) + 1);
+    const x = (ms) => L + ((ms - t0) / Math.max(1, t1 - t0)) * (W - L - R);
+    const y = (val) => T + (1 - (val - lo) / (hi - lo)) * (H - T - B);
+    for (let g = 0; g <= 3; g++) {                            // recessive grid, y labels in m/s
+      const val = lo + (g / 3) * (hi - lo);
+      svg.append(svgEl("line", { class: "grid", x1: L, x2: W - R, y1: y(val), y2: y(val) }));
+      const t = svgEl("text", { class: "axis-label", x: L - 6, y: y(val) + 4, "text-anchor": "end" });
+      t.textContent = val.toFixed(0) + (g === 3 ? " m/s" : "");
+      svg.append(t);
+    }
+    [t0, t1].forEach((ms, i) => {
+      const t = svgEl("text", { class: "axis-label", x: x(ms), y: H - 6, "text-anchor": i ? "end" : "start" });
+      t.textContent = sec(ms);
+      svg.append(t);
+    });
+    const show = (s) => {
+      tip.innerHTML = "<b></b><span></span>";
+      tip.querySelector("b").textContent = `${KIND_LABEL[s.stroke] || s.stroke} · ${fmt(s.peak_wrist_speed, 1, " m/s")}`;
+      tip.querySelector("span").textContent = `at ${sec(s.timestamp_ms)}`;
+      tip.hidden = false;
+      const r = svg.getBoundingClientRect();
+      tip.style.left = Math.min(Math.max(0, (x(s.timestamp_ms) / W) * r.width - 60), Math.max(0, r.width - 150)) + "px";
+      tip.style.top = Math.max(0, (y(s.peak_wrist_speed) / H) * r.height - 50) + "px";
+    };
+    const hide = () => { tip.hidden = true; };
+    sw.forEach((s) => {
+      const cx = x(s.timestamp_ms), cy = y(s.peak_wrist_speed);
+      const label = `${KIND_LABEL[s.stroke] || s.stroke} at ${sec(s.timestamp_ms)}: ${fmt(s.peak_wrist_speed, 1, " m/s")}`;
+      const dot = svgEl("circle", { class: "dot", cx, cy, r: 4.5, fill: `var(--s-${s.stroke}, var(--s-unknown))`,
+                                    tabindex: 0, role: "button", "aria-label": label });
+      const hit = svgEl("circle", { class: "hit", cx, cy, r: 12 });   // target bigger than the mark
+      [dot, hit].forEach((el) => {
+        el.addEventListener("pointerenter", () => show(s));
+        el.addEventListener("pointerleave", hide);
+        el.addEventListener("click", () => seekLink(s.timestamp_ms).onclick());
+      });
+      dot.addEventListener("focus", () => show(s));
+      dot.addEventListener("blur", hide);
+      dot.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); seekLink(s.timestamp_ms).onclick(); }
+      });
+      svg.append(dot, hit);
+    });
+    const kinds = [...new Set(sw.map((s) => s.stroke))];
+    $("speed-legend").replaceChildren(...(kinds.length > 1 ? kinds.map((k) => {    // one series: the text names it
+      const span = document.createElement("span");
+      span.innerHTML = `<i class="k-${k}"></i>`;
+      span.append(KIND_LABEL[k] || k);
+      return span;
+    }) : []));
+  }
+
+  // ── Swing highlights ─────────────────────────────────────────────────────
+  function renderHighlights(h) {
+    const box = $("highlights");
+    if (!box) return;
+    const items = Object.entries(h || {}).map(([stroke, e]) => {
+      const li = document.createElement("li");
+      li.append(KIND_LABEL[stroke] + ": ");
+      const parts = [["most typical", e.typical], ["fastest", e.fastest], ["odd one out", e.outlier]].filter(([, x]) => x);
+      parts.forEach(([label, x], i) => {
+        if (i) li.append(" · ");
+        li.append(label + " ", seekLink(x.timestamp_ms));
+        if (x.label) li.append(` (${x.label})`);
+      });
+      if ($("sbs") && e.typical && e.outlier) {
+        const b = document.createElement("button");
+        b.className = "linkish"; b.textContent = "Side by side";
+        b.style.marginLeft = ".5rem";
+        b.onclick = () => sideBySide(e.typical, e.outlier, `Most typical ${stroke}`, `Odd one out: ${e.outlier.label}`);
+        li.append(b);
+      }
+      return li;
+    });
+    $("highlight-list").replaceChildren(...items);
+    box.hidden = !items.length;
+  }
+
+  // ── Side by side: two moments of the same clip, played together ─────────
+  const SBS_RATE = 0.25, SBS_LEN_S = 2;
+  let SBS = null;   // {a, b} timestamps (ms) of the current pair
+  function sideBySide(a, b, capA, capB) {
+    const src = $("player").src;
+    if (!src) return;
+    SBS = { a: a.timestamp_ms, b: b.timestamp_ms };
+    [["sbs-a", capA, SBS.a], ["sbs-b", capB, SBS.b]].forEach(([id, cap, ms]) => {
+      const v = $(id);
+      if (v.src !== src) v.src = src;
+      $(id + "-cap").textContent = `${cap} · ${sec(ms)}`;
+    });
+    $("sbs").hidden = false;
+    playSbs();
+  }
+  function playSbs() {
+    if (!SBS) return;
+    [["sbs-a", SBS.a], ["sbs-b", SBS.b]].forEach(([id, ms]) => {
+      const v = $(id), start = Math.max(0, ms / 1000 - LEAD_S);
+      v.playbackRate = SBS_RATE;
+      v.currentTime = start;
+      v.ontimeupdate = () => { if (v.currentTime >= start + SBS_LEN_S) v.pause(); };   // stop after the shot
+      v.play();
+    });
+  }
+  $("sbs-replay")?.addEventListener("click", playSbs);
+  $("sbs-close")?.addEventListener("click", () => { $("sbs").hidden = true; ["sbs-a", "sbs-b"].forEach((id) => $(id).pause()); });
+
+  // ── Timeline ─────────────────────────────────────────────────────────────
+  // ── Skeleton overlay ─────────────────────────────────────────────────────
+  let POSE = null;  // res.pose: {landmarks, edges, ts_ms, xy}
+
+  function poseAt(ms) {
+    const ts = POSE.ts_ms;
+    let lo = 0, hi = ts.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; ts[mid] < ms ? (lo = mid + 1) : (hi = mid); }
+    if (lo > 0 && Math.abs(ts[lo - 1] - ms) < Math.abs(ts[lo] - ms)) lo--;
+    return Math.abs(ts[lo] - ms) <= 100 ? POSE.xy[lo] : null;  // nothing if no frame within 100 ms
+  }
+
+  function drawOverlay() {
+    const c = $("overlay"), v = $("player");
+    if (!c) return;
+    const ctx = c.getContext && c.getContext("2d");
+    if (!ctx) return;
+    const w = c.clientWidth, h = c.clientHeight;
+    c.width = w; c.height = h;
+    ctx.clearRect(0, 0, w, h);
+    if (!POSE || !$("show-skeleton").checked || !v.videoWidth) return;
+    const pts = poseAt(v.currentTime * 1000);
+    if (!pts) return;
+    // The video is letterboxed inside the element (object-fit: contain)
+    const scale = Math.min(w / v.videoWidth, h / v.videoHeight);
+    const dw = v.videoWidth * scale, dh = v.videoHeight * scale, ox = (w - dw) / 2, oy = (h - dh) / 2;
+    const at = (i) => pts[2 * i] < 0 ? null : [ox + pts[2 * i] * dw, oy + pts[2 * i + 1] * dh];
+    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(92, 196, 136, .9)"; ctx.fillStyle = "#fff";
+    for (const [a, b] of POSE.edges) {
+      const p1 = at(a), p2 = at(b);
+      if (p1 && p2) { ctx.beginPath(); ctx.moveTo(...p1); ctx.lineTo(...p2); ctx.stroke(); }
+    }
+    for (let i = 0; i < POSE.landmarks.length; i++) {
+      const q = at(i);
+      if (q) { ctx.beginPath(); ctx.arc(q[0], q[1], 3, 0, 2 * Math.PI); ctx.fill(); }
+    }
+  }
+
+  function overlayLoop() {
+    drawOverlay();
+    const v = $("player");
+    if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(overlayLoop);
+    else if (!v.paused) requestAnimationFrame(overlayLoop);
+  }
+  $("player").addEventListener("play", overlayLoop);
+  ["seeked", "pause", "loadedmetadata"].forEach((ev) => $("player").addEventListener(ev, drawOverlay));
+  window.addEventListener("resize", drawOverlay);
+  $("show-skeleton")?.addEventListener("change", drawOverlay);
+
+  // ── Playback: slow motion, shot-to-shot navigation, frame stepping ───────
+  let MARKS = [];      // sorted timestamps (ms) of split steps and swings
+  const LEAD_S = 1;    // seekLink starts playback this long before the moment
+
+  function jumpShot(dir) {
+    if (!MARKS.length) return;
+    // Where the "current" shot is: seekLink parked the video LEAD_S before it.
+    // Within 250 ms of it, Previous goes to the shot before; later, it replays this one.
+    const ref = $("player").currentTime * 1000 + LEAD_S * 1000;
+    const ms = dir > 0 ? MARKS.find((m) => m > ref + 250) : [...MARKS].reverse().find((m) => m < ref - 250);
+    if (ms !== undefined) seekLink(ms).onclick();
+  }
+
+  // While the video plays, mark the table row of the moment on screen
+  // (within CURRENT_WINDOW_S of it), so the numbers follow the video.
+  const CURRENT_WINDOW_S = 0.6;
+  function markCurrentRows() {
+    if (!$("playback") || !LAST) return;
+    const t = $("player").currentTime * 1000;
+    const mark = (table, items) => {
+      const rows = [...table.rows].slice(1);
+      let best = -1, gap = CURRENT_WINDOW_S * 1000;
+      items.forEach((it, i) => { const d = Math.abs(it.timestamp_ms - t); if (d <= gap) { gap = d; best = i; } });
+      rows.forEach((r, i) => r.classList.toggle("current", i === best));
+    };
+    mark($("split-table"), LAST.res.events || []);
+    if (LAST.res.strokes) mark($("stroke-table"), LAST.res.strokes.swings);
+  }
+  ["timeupdate", "seeked"].forEach((ev) => $("player").addEventListener(ev, markCurrentRows));
+
+  function stepFrame(dir) {
+    const p = $("player");
+    p.pause();
+    p.currentTime = Math.max(0, p.currentTime + dir / ((LAST && LAST.res.fps) || 30));
+  }
+
+  $("prev-shot")?.addEventListener("click", () => jumpShot(-1));
+  $("next-shot")?.addEventListener("click", () => jumpShot(1));
+  $("speed")?.addEventListener("change", (e) => {
+    const p = $("player");
+    p.playbackRate = p.defaultPlaybackRate = +e.target.value;  // default survives loading a new clip
+  });
+  document.addEventListener("keydown", (e) => {
+    if (!$("playback") || $("stage").hidden || e.ctrlKey || e.metaKey || e.altKey
+        || /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    const act = { "[": () => jumpShot(-1), "]": () => jumpShot(1), ",": () => stepFrame(-1), ".": () => stepFrame(1) }[e.key];
+    if (act) { e.preventDefault(); act(); }
+  });
+
+  const KIND_LABEL = { split: "Split step", forehand: "Forehand", backhand: "Backhand", serve: "Serve", unknown: "Swing" };
+
+  function renderTimeline(res) {
+    const marks = [
+      ...(res.events || []).filter((e) => !e.during_swing).map((e) => ["split", e.timestamp_ms]),
+      ...(res.strokes ? res.strokes.swings.map((s) => [s.stroke, s.timestamp_ms]) : []),
+    ];
+    MARKS = marks.map(([, ms]) => ms).sort((a, b) => a - b);
+    ["prev-shot", "next-shot"].forEach((id) => { if ($(id)) $(id).disabled = !MARKS.length; });
+    const box = $("timeline-box");
+    box.hidden = !marks.length || !res.duration_ms;
+    if (box.hidden) return;
+    $("timeline").replaceChildren(...marks.map(([kind, ms]) => {
+      const b = document.createElement("button");
+      b.className = "mk k-" + kind;
+      const [t0, t1] = span(res);
+      b.style.left = Math.min(100, Math.max(0, ((ms - t0) / Math.max(1, t1 - t0)) * 100)) + "%";
+      b.title = `${KIND_LABEL[kind] || kind} at ${sec(ms)}`;
+      b.setAttribute("aria-label", b.title);
+      b.onclick = () => seekLink(ms).onclick();
+      return b;
+    }));
+    const kinds = [...new Set(marks.map(([k]) => k))];
+    $("legend").replaceChildren(...kinds.map((k) => {
+      const span = document.createElement("span");
+      span.innerHTML = `<i class="k-${k}"></i>`;
+      span.append(KIND_LABEL[k] || k);
+      return span;
+    }));
+  }
+
+  // ── Coach's summary ──────────────────────────────────────────────────────
+  function renderCoach(c) {
+    const box = $("coach");
+    if (!box) return;
+    box.hidden = !c || (!c.focus.length && !c.strengths.length);
+    if (box.hidden) return;
+    const li = (t) => { const e = document.createElement("li"); e.textContent = t; return e; };
+    $("coach-focus").replaceChildren(...c.focus.map(li), ...(c.more ? [li(`…and ${c.more} more tip${c.more > 1 ? "s" : ""} below.`)] : []));
+    $("coach-strengths").replaceChildren(...c.strengths.map(li));
+    $("coach-focus-title").hidden = !c.focus.length;
+    $("coach-strengths-title").hidden = !c.strengths.length;
+    if ($("practice")) {
+      const drills = c.drills || [];
+      $("practice-list").replaceChildren(...drills.map((d) => {
+        const item = document.createElement("li");
+        item.innerHTML = "<b></b> <span class=\"tag\"></span><br><span></span>";
+        item.querySelector("b").textContent = d.name;
+        item.querySelector(".tag").textContent = d.dose;
+        item.lastElementChild.textContent = d.how;
+        return item;
+      }));
+      $("practice").hidden = !drills.length;
+    }
+  }
+
+  // ── Drill goals (this browser only) ──────────────────────────────────────
+  // [key, label, "min" | "max", unit, value(res) -> number | null]
+  const GOALS = [
+    ["split_rate", "Split steps per minute, at least", "min", "", (r) => r.session ? r.session.split_steps_per_minute : null],
+    ["knee", "Landing knee angle, at most (deeper bend)", "max", "°", (r) => r.session && r.session.landing_knee_angle ? r.session.landing_knee_angle.median : null],
+    ["with_split", "Shots with a split step before them, at least", "min", "%", (r) => r.timing && r.timing.shots ? r.timing.fraction_with_split_step * 100 : null],
+    ["consistency", "Stroke consistency, at least", "min", "/100", (r) => {
+      const v = r.strokes ? Object.values(r.strokes.summary).map((x) => x.consistency).filter((x) => x != null) : [];
+      return v.length ? Math.min(...v) : null; }],
+    ["recovery", "Back to ready after a shot, at most", "max", " s", (r) => r.recovery && r.recovery.median_recovery_ms != null ? r.recovery.median_recovery_ms / 1000 : null],
+    ["rally", "Longest rally, at least", "min", " shots", (r) => r.rallies ? r.rallies.summary.longest : null],
+    ["head", "Head movement at contact, at most", "max", " cm", (r) => summarise(r, "", "").head],
+    ["prep", "Shoulders turned before contact, at least", "min", " s", (r) => summarise(r, "", "").prep],
+    ["steps_min", "Steps per minute, at least", "min", "", (r) => r.footwork ? r.footwork.steps_per_minute : null],
+  ];
+  const GOALS_KEY = "tennis-trainer-goals-v1";
+
+  function readGoals() { try { return JSON.parse(localStorage.getItem(GOALS_KEY)) || {}; } catch { return {}; } }
+  function writeGoals(g) { try { localStorage.setItem(GOALS_KEY, JSON.stringify(g)); } catch { /* storage off */ } }
+
+  function buildGoalsForm() {
+    const form = $("goals-form");
+    if (!form) return;
+    const goals = readGoals();
+    form.replaceChildren();
+    GOALS.forEach(([key, label, , unit]) => {
+      const l = document.createElement("label");
+      l.textContent = label + (unit ? ` (${unit.trim()})` : "");
+      l.htmlFor = "goal-" + key;
+      const input = document.createElement("input");
+      input.type = "number"; input.step = "any"; input.id = "goal-" + key;
+      input.value = goals[key] ?? "";
+      input.addEventListener("change", () => {
+        const g = readGoals();
+        input.value === "" ? delete g[key] : (g[key] = +input.value);
+        writeGoals(g);
+      });
+      form.append(l, input);
+    });
+  }
+
+  function renderGoals(res) {
+    const box = $("goal-results");
+    if (!box) return;
+    const goals = readGoals();
+    const items = GOALS.filter(([key]) => goals[key] != null).map(([key, label, dir, unit, get]) => {
+      const v = get(res), target = goals[key];
+      const li = document.createElement("li");
+      const mark = document.createElement("span");
+      if (v == null) {
+        mark.textContent = "– Not measured";
+        mark.className = "";
+      } else {
+        const met = dir === "min" ? v >= target : v <= target;
+        mark.textContent = met ? "✓ Met" : "✗ Not yet";   // icon + label, not colour alone
+        mark.className = met ? "met" : "unmet";
+      }
+      li.append(mark, ` · ${label.replace(/, at (least|most).*/, "")}: `
+                      + (v == null ? "–" : `${+v.toFixed(2)}${unit}`) + ` (goal ${dir === "min" ? "≥" : "≤"} ${target}${unit})`);
+      return li;
+    });
+    $("goal-list").replaceChildren(...items);
+    box.hidden = !items.length;
+  }
+
+  // ── Report download ──────────────────────────────────────────────────────
+  let LAST = null;  // {res, file}
+
+  function download(name, type, text) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type }));
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  function toCsv(res) {
+    const rows = [
+      ...(res.events || []).map((e) => ({ type: e.during_swing ? "swing hop" : "split step", ...e })),
+      ...(res.strokes ? res.strokes.swings.map((s) => ({ type: s.stroke, ...s })) : []),
+    ].sort((a, b) => a.timestamp_ms - b.timestamp_ms);
+    const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+    const cell = (v) => v == null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+    return [cols.join(","), ...rows.map((r) => cols.map((c) => cell(r[c])).join(","))].join("\n") + "\n";
+  }
+
+  function reportName(ext) {
+    const base = LAST.file.replace(/\.[^.]+$/, "").replace(/[^\w-]+/g, "_").slice(0, 40) || "session";
+    return `${base}-tennis-report.${ext}`;
+  }
+
+  // ── Session history (this browser only) ──────────────────────────────────
+  const HISTORY_KEY = "tennis-trainer-history-v1", HISTORY_MAX = 50;
+
+  function readHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch { return []; }
+  }
+  function writeHistory(list) {
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX))); } catch { /* storage off */ }
+  }
+
+  function summarise(res, fileName, modeName) {
+    const med = (o) => (o && o.median !== undefined ? o.median : null);
+    const sw = res.strokes ? res.strokes.summary : {};
+    // Median over forehand + backhand swings (serves don't have these metrics)
+    const groundMed = (key, scale) => {
+      const v = (res.strokes ? res.strokes.swings : []).filter((s) => s.stroke === "forehand" || s.stroke === "backhand")
+        .map((s) => s[key]).filter((x) => x != null).sort((a, b) => a - b);
+      return v.length ? (v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2) * scale : null;
+    };
+    const strokeMed = (key) => {
+      const vals = Object.values(sw).map((v) => typeof v[key] === "number" ? v[key] : med(v[key]))
+        .filter((v) => v !== null && v !== undefined);
+      return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    };
+    return {
+      date: new Date().toISOString(), file: fileName, mode: modeName,
+      split_steps: res.count ?? null,
+      knee: med(res.session && res.session.landing_knee_angle),
+      swings: res.strokes ? res.strokes.swings.length : null,
+      contact: strokeMed("contact_height"),
+      speed: strokeMed("peak_wrist_speed"),
+      with_split: res.timing && res.timing.shots ? res.timing.fraction_with_split_step : null,
+      per_min: res.session ? res.session.split_steps_per_minute : null,
+      consistency: strokeMed("consistency"),
+      recovery: res.recovery && res.recovery.median_recovery_ms != null ? res.recovery.median_recovery_ms / 1000 : null,
+      head: groundMed("head_movement_m", 100),            // cm
+      prep: groundMed("prep_lead_ms", 0.001),             // s
+      steps_min: res.footwork ? res.footwork.steps_per_minute : null,
+    };
+  }
+
+  function renderHistory() {
+    const box = $("history");
+    if (!box) return;  // feature switched off
+    const list = readHistory();
+    box.hidden = !list.length && !$("import-history");
+    $("history-table").hidden = !list.length;
+    COMPARE = COMPARE.filter((d) => list.some((h) => h.date === d));
+    const pick = (h) => {
+      const c = document.createElement("input");
+      c.type = "checkbox"; c.checked = COMPARE.includes(h.date);
+      c.setAttribute("aria-label", "Compare this session");
+      c.addEventListener("change", () => {
+        COMPARE = c.checked ? [...COMPARE, h.date].slice(-2) : COMPARE.filter((d) => d !== h.date);
+        renderHistory();
+      });
+      return c;
+    };
+    $("history-table").classList.toggle("has-compare", !!$("compare"));
+    fillTable($("history-table"), [
+      ...($("compare") ? [["Compare", pick]] : []),
+      ["Date", (h) => new Date(h.date).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })],
+      ["Mode", (h) => KIND_LABEL[h.mode] || (h.mode === "auto" ? "Match play" : h.mode)],
+      ["Clip", (h) => h.file],
+      ["Split steps", (h) => h.split_steps ?? "–"],
+      ["Landing knee", (h) => fmt(h.knee, 0, "°")],
+      ["Swings", (h) => h.swings ?? "–"],
+      ["Contact height", (h) => fmt(h.contact)],
+      ["Wrist speed", (h) => fmt(h.speed, 1, " m/s")],
+      ["Split step before shot", (h) => h.with_split == null ? "–" : Math.round(h.with_split * 100) + "%"],
+      ["Recovery", (h) => fmt(h.recovery, 1, " s")],
+      ...($("history").dataset.notes === "on" ? [["Notes", noteInput]] : []),
+    ], list);
+    renderChart();
+    renderCompare(list);
+  }
+
+  // ── Session notes (context for the numbers: wind, new racket, tired, ...) ──
+  const NOTE_MAX = 200;
+  function noteInput(h) {
+    const input = document.createElement("input");
+    input.className = "note"; input.maxLength = NOTE_MAX; input.value = h.note || "";
+    input.placeholder = "Add a note…";
+    input.setAttribute("aria-label", `Note for ${h.file}`);
+    input.addEventListener("change", () => {
+      const list = readHistory(), item = list.find((x) => x.date === h.date);
+      if (!item) return;
+      const text = input.value.trim().slice(0, NOTE_MAX);
+      text ? (item.note = text) : delete item.note;
+      writeHistory(list);
+      renderChart(); renderCompare(list);
+    });
+    return input;
+  }
+
+  // ── Compare two sessions ─────────────────────────────────────────────────
+  let COMPARE = [];  // dates (ids) of the ticked sessions, at most two
+  // [key, label, format, better: 1 = higher is better, -1 = lower, 0 = neither]
+  const COMPARE_METRICS = [
+    ["split_steps", "Split steps", (v) => String(v), 0],
+    ["per_min", "Split steps per minute", (v) => v.toFixed(1), 1],
+    ["knee", "Landing knee angle", (v) => v.toFixed(0) + "°", -1],
+    ["swings", "Swings", (v) => String(v), 0],
+    ["consistency", "Stroke consistency", (v) => v.toFixed(0) + "/100", 1],
+    ["with_split", "Shots with a split step before", (v) => Math.round(v * 100) + "%", 1],
+    ["recovery", "Back to ready", (v) => v.toFixed(1) + " s", -1],
+    ["contact", "Contact height", (v) => v.toFixed(2), 0],
+    ["speed", "Wrist speed", (v) => v.toFixed(1) + " m/s", 1],
+    ["head", "Head movement at contact", (v) => v.toFixed(0) + " cm", -1],
+    ["prep", "Shoulders turned before contact", (v) => v.toFixed(2) + " s", 1],
+    ["steps_min", "Steps per minute", (v) => v.toFixed(0), 1],
+  ];
+
+  function renderCompare(list) {
+    if (!$("compare")) return;
+    const picked = list.filter((h) => COMPARE.includes(h.date)).reverse();  // older first
+    const table = $("compare-table");
+    table.hidden = picked.length !== 2;
+    $("compare-hint").textContent = picked.length === 2 ? "" : picked.length ? "Tick one more session." : "Tick two sessions to compare them.";
+    $("compare-hint").hidden = picked.length === 2;
+    if (table.hidden) return;
+    const [a, b] = picked;
+    const rows = COMPARE_METRICS.filter(([k]) => a[k] != null && b[k] != null);
+    const change = ([k, , f, better]) => {
+      const d = b[k] - a[k];
+      if (Math.abs(d) < 1e-9) return "same";
+      const span = document.createElement("span");
+      span.textContent = (d > 0 ? "▲ +" : "▼ −") + f(Math.abs(d));
+      if (better) {
+        const good = Math.sign(d) === better;
+        span.className = good ? "met" : "unmet";
+        span.append(good ? " better" : " worse");   // words, not colour alone
+      }
+      return span;
+    };
+    const day = (h) => shortDate(h.date) + " · " + h.file + (h.note ? ` (${h.note})` : "");
+    fillTable(table, [["Metric", (r) => r[1]], [day(a), (r) => r[2](a[r[0]])], [day(b), (r) => r[2](b[r[0]])], ["Change", change]], rows);
+    if (!rows.length) { table.hidden = true; $("compare-hint").hidden = false; $("compare-hint").textContent = "These two sessions have no metrics in common."; }
+  }
+
+  // ── Progress chart (single series: the picked metric over sessions) ──────
+  const CHART_METRICS = [
+    ["per_min", "Split steps per minute", (v) => v.toFixed(1)],
+    ["knee", "Landing knee bend (°, lower = deeper)", (v) => v.toFixed(0) + "°"],
+    ["with_split", "Shots with a split step before them", (v) => Math.round(v * 100) + "%"],
+    ["consistency", "Stroke consistency (0-100)", (v) => v.toFixed(0)],
+    ["contact", "Contact height (0 = hips, 1 = shoulders)", (v) => v.toFixed(2)],
+    ["speed", "Wrist speed (m/s)", (v) => v.toFixed(1)],
+    ["recovery", "Back to ready after a shot (s, lower = faster)", (v) => v.toFixed(1) + " s"],
+    ["head", "Head movement at contact (cm, lower = stiller)", (v) => v.toFixed(0) + " cm"],
+    ["prep", "Shoulders turned before contact (s, higher = earlier)", (v) => v.toFixed(2) + " s"],
+    ["steps_min", "Steps per minute", (v) => v.toFixed(0)],
+  ];
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const svgEl = (tag, attrs) => {
+    const el = document.createElementNS(SVG_NS, tag);
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    return el;
+  };
+  const shortDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+  function renderChart() {
+    const sel = $("chart-metric");
+    if (!sel) return;
+    const list = readHistory();
+    // Offer only metrics that at least one session has
+    const available = CHART_METRICS.filter(([key]) => list.some((h) => h[key] != null));
+    const keep = sel.value;
+    sel.replaceChildren(...available.map(([key, label]) => new Option(label, key)));
+    if (available.some(([key]) => key === keep)) sel.value = keep;
+    const metric = CHART_METRICS.find(([key]) => key === sel.value);
+    const pts = metric ? list.filter((h) => h[metric[0]] != null).slice().reverse() : [];  // oldest first
+    const svg = $("chart");
+    svg.replaceChildren();
+    $("chart-tip").hidden = true;
+    const enough = pts.length >= 2;
+    $("chart-wrap").hidden = !enough;
+    $("chart-empty").hidden = enough;
+    $("chart-empty").textContent = "Analyse at least two clips to see a progress chart.";
+    if (!enough) return;
+
+    const [key, label, fmtV] = metric;
+    svg.setAttribute("aria-label", `${label} over ${pts.length} sessions`);
+    const W = 600, H = 220, L = 44, R = 12, T = 12, B = 26;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    const vals = pts.map((h) => h[key]);
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.1; lo -= pad; hi += pad;
+    const x = (i) => L + (i / (pts.length - 1)) * (W - L - R);
+    const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+
+    for (let g = 0; g <= 3; g++) {                          // recessive hairline grid + y labels
+      const v = lo + (g / 3) * (hi - lo), yy = y(v);
+      svg.append(svgEl("line", { class: "grid", x1: L, x2: W - R, y1: yy, y2: yy }));
+      const t = svgEl("text", { class: "axis-label", x: L - 6, y: yy + 4, "text-anchor": "end" });
+      t.textContent = fmtV(v);
+      svg.append(t);
+    }
+    [0, pts.length - 1].forEach((i) => {                    // first/last date only, to avoid collisions
+      const t = svgEl("text", { class: "axis-label", x: x(i), y: H - 6, "text-anchor": i ? "end" : "start" });
+      t.textContent = shortDate(pts[i].date);
+      svg.append(t);
+    });
+    svg.append(svgEl("polyline", { class: "series",
+      points: pts.map((h, i) => `${x(i)},${y(h[key])}`).join(" ") }));
+    const cross = svgEl("line", { class: "crosshair", y1: T, y2: H - B, visibility: "hidden" });
+    svg.append(cross);
+
+    const tip = $("chart-tip");
+    const show = (i) => {
+      const h = pts[i];
+      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+      tip.innerHTML = "<b></b><span></span>";
+      tip.querySelector("b").textContent = fmtV(h[key]);
+      tip.querySelector("span").textContent = `${shortDate(h.date)} · ${h.file}` + (h.note ? ` · “${h.note}”` : "");
+      tip.hidden = false;
+      const box = svg.getBoundingClientRect();
+      tip.style.left = Math.min(Math.max(0, (x(i) / W) * box.width - 60), Math.max(0, box.width - 160)) + "px";
+      tip.style.top = Math.max(0, (y(h[key]) / H) * box.height - 52) + "px";
+    };
+    const hide = () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; };
+    pts.forEach((h, i) => {                                 // markers: 8px, ringed, keyboard-focusable
+      const c = svgEl("circle", { class: "pt", cx: x(i), cy: y(h[key]), r: 4, tabindex: 0,
+                                  "aria-label": `${shortDate(h.date)}: ${fmtV(h[key])}` });
+      c.addEventListener("focus", () => show(i));
+      c.addEventListener("blur", hide);
+      svg.append(c);
+    });
+    // Crosshair snaps to the nearest session along X; the whole plot is the hit area
+    svg.onpointermove = (e) => {
+      const box = svg.getBoundingClientRect();
+      if (!box.width) return;
+      const fx = ((e.clientX - box.left) / box.width) * W;
+      show(Math.max(0, Math.min(pts.length - 1, Math.round(((fx - L) / (W - L - R)) * (pts.length - 1)))));
+    };
+    svg.onpointerleave = hide;
+  }
+
+  function saveToHistory(res, fileName, modeName) {
+    if (!$("history")) return;
+    writeHistory([summarise(res, fileName, modeName), ...readHistory()]);
+    renderHistory();
+  }
+
+  // ── Wiring ───────────────────────────────────────────────────────────────
+  $("video").addEventListener("change", () => {
+    const f = $("video").files[0], p = $("player");
+    if (f) { p.src = URL.createObjectURL(f); $("stage").hidden = false; if ($("playback")) $("playback").hidden = false; }
+    POSE = null; drawOverlay();
+    updateControls();
+  });
+
+  // Drag and drop a clip onto the upload card (same path as the file picker)
+  const card = $("upload-card");
+  ["dragenter", "dragover"].forEach((ev) => card.addEventListener(ev, (e) => {
+    if (![...(e.dataTransfer?.types || [])].includes("Files")) return;
+    e.preventDefault(); card.classList.add("dragging");
+  }));
+  card.addEventListener("dragleave", (e) => { if (!card.contains(e.relatedTarget)) card.classList.remove("dragging"); });
+  card.addEventListener("drop", (e) => {
+    e.preventDefault(); card.classList.remove("dragging");
+    const f = [...(e.dataTransfer?.files || [])].find((x) => x.type.startsWith("video/") || /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(x.name));
+    if (!f) { status("That isn't a video file.", true); return; }
+    const dt = new DataTransfer(); dt.items.add(f);
+    $("video").files = dt.files;
+    $("video").dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  $("go").addEventListener("click", async () => {
+    const file = $("video").files[0];
+    $("go").disabled = true;
+    $("split-results").hidden = $("stroke-results").hidden = true;
+    try {
+      const res = await analyse(file);
+      status(`Done in ${res.processing_s}s · ${res.frames} frames`
+             + (RATE_LEFT != null && RATE_LEFT <= 5 ? ` · ${RATE_LEFT} analys${RATE_LEFT === 1 ? "is" : "es"} left this hour` : ""));
+      renderGoals(res);
+      renderCoach(res.coach);
+      const camTips = (res.camera && res.camera.tips) || [];
+      $("camera-notice").textContent = camTips.join(" ");
+      $("camera-notice").hidden = !camTips.length;
+      renderSplit(res);
+      renderStrokes(res);
+      renderHighlights(res.highlights);
+      renderSpeedChart(res);
+      renderTimeline(res);
+      POSE = res.pose || null; drawOverlay();
+      saveToHistory(res, file.name, mode());
+      LAST = { res, file: file.name };
+      if ($("downloads")) $("downloads").hidden = false;
+    } catch (e) {
+      status("Error: " + e.message, true);
+    } finally {
+      updateControls();
+    }
+  });
+
+  $("clear-history")?.addEventListener("click", () => { writeHistory([]); renderHistory(); });
+
+  // ── History export / import (move progress to another browser) ────────────
+  $("export-history")?.addEventListener("click", () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    download(`tennis-trainer-history-${stamp}.json`, "application/json",
+             JSON.stringify({ app: "tennis-trainer", version: 1, sessions: readHistory() }, null, 2));
+  });
+  $("import-history")?.addEventListener("click", () => $("import-file").click());
+  $("import-file")?.addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      const incoming = (Array.isArray(data) ? data : data.sessions || [])
+        .filter((h) => h && typeof h.date === "string" && !isNaN(Date.parse(h.date)));
+      if (!incoming.length) throw new Error("no sessions in that file");
+      // Merge by date (a session's id), newest first, capped like normal saves
+      const byDate = new Map([...readHistory(), ...incoming].map((h) => [h.date, h]));
+      const merged = [...byDate.values()].sort((a, b) => b.date.localeCompare(a.date));
+      const added = merged.length - readHistory().length;
+      writeHistory(merged);
+      renderHistory();
+      status(`Imported ${added} new session${added === 1 ? "" : "s"}` + (merged.length > HISTORY_MAX ? ` (keeping the latest ${HISTORY_MAX})` : "") + ".");
+    } catch (err) {
+      status("Couldn't import history: " + err.message, true);
+    }
+  });
+  $("chart-metric")?.addEventListener("change", renderChart);
+  $("dl-json")?.addEventListener("click", () => download(reportName("json"), "application/json", JSON.stringify(LAST.res, null, 2)));
+  $("print-report")?.addEventListener("click", () => {
+    const old = document.title;
+    document.title = reportName("pdf").replace(/\.pdf$/, "");   // suggested PDF file name
+    window.print();
+    document.title = old;
+  });
+  $("dl-md")?.addEventListener("click", async () => {
+    const { pose, ...result } = LAST.res;   // the skeleton isn't part of the report
+    try {
+      const r = await fetch(API_URL + "/v1/report", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                      body: JSON.stringify({ result, title: LAST.file }) });
+      if (!r.ok) throw new Error(`Report failed (${r.status})`);
+      download(reportName("md"), "text/markdown", await r.text());
+    } catch (e) { status("Error: " + e.message, true); }
+  });
+  $("dl-csv")?.addEventListener("click", () => download(reportName("csv"), "text/csv", toCsv(LAST.res)));
+  loadFeatures().then(() => { renderHistory(); buildGoalsForm(); });
+</script>
+</body>
+</html>

@@ -80,6 +80,7 @@ KEY_LANDMARKS = [LEFT_HIP, RIGHT_HIP, LEFT_ANKLE, RIGHT_ANKLE,
                  LEFT_HEEL, RIGHT_HEEL, LEFT_FOOT_INDEX, RIGHT_FOOT_INDEX]
 
 # Detector states (also shown in the GUI status line)
+NOT_TRACKED   = "not_tracked"   # GUI-only: no usable pose this frame
 GROUNDED      = "grounded"
 AIRBORNE      = "airborne"
 LEFT_LEG_UP   = "left_leg_up"
@@ -169,12 +170,16 @@ _STATE_COLORS = {
     RIGHT_LEG_UP: (200, 0, 255),   # purple
 }
 
-def annotate_frame(frame: np.ndarray, det: "SplitStepDetector", hop: bool) -> None:
+def annotate_frame(frame: np.ndarray, det: "SplitStepDetector", hop: bool,
+                   swing_label: str | None = None) -> None:
     """Draw the count/state overlay (plus a "HOP!" flash) onto a BGR frame in
-    place. det can be any detector exposing .count and .state."""
+    place. det can be any detector exposing .count and .state. swing_label
+    (e.g. "Forehands: 12") adds a line for a live drill."""
     h, w = frame.shape[:2]
     state_color = _STATE_COLORS.get(det.state, (255, 255, 255))
-    cv2.rectangle(frame, (0, 0), (320, 80), (0, 0, 0), -1)
+    cv2.rectangle(frame, (0, 0), (320, 110 if swing_label else 80), (0, 0, 0), -1)
+    if swing_label:
+        cv2.putText(frame, swing_label, (10, 98), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 200, 0), 2)
     cv2.putText(frame, f"Split Steps: {det.count}",
                 (10, 38), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 220, 220), 2)
     cv2.putText(frame, f"State: {det.state}",
@@ -282,7 +287,9 @@ class SplitStepDetector:
       - ready stance: wrists near the torso and close together, elbows bent
 
     The hop is confirmed once it stays airborne for MIN_AIRBORNE_FRAMES.
-    Shares the .count / .state / .process() / .reset() interface with LSTMCounter.
+    Frames without all KEY_LANDMARKS visible are ignored (.tracking = False).
+    Shares the .count / .state / .tracking / .process() / .reset() interface
+    with LSTMCounter.
     """
 
     def __init__(self, clock=None):
@@ -294,6 +301,7 @@ class SplitStepDetector:
     def reset(self):
         self.count             = 0
         self.state             = GROUNDED
+        self.tracking          = False
         self._tracker          = FootStateTracker(self._clock)
         self._grounded_streak  = 0
         self._last_grnd_streak = 0
@@ -385,7 +393,8 @@ class SplitStepDetector:
         landmarks     — pose_world_landmarks (metres, hip-relative)
         image_lms     — pose_landmarks (normalised image coords, optional)
         """
-        if not key_landmarks_visible(landmarks):
+        self.tracking = key_landmarks_visible(landmarks)
+        if not self.tracking:
             return False
 
         # Track hip vertical velocity in image space (y increases downward).
@@ -469,18 +478,27 @@ class _AnalysisWorker:
     background thread and returns when stop_event is set or the source ends.
 
     use_lstm selects LSTMCounter instead of the rule-based SplitStepDetector.
+    drill ("forehand" / "backhand" / "serve") also counts swings live with
+    strokes.LiveSwingCounter for the given hitting hand.
 
     Pushes to frame_queue:
-      ("frame", rgb_array, count, state)  — each processed frame
+      ("frame", rgb_array, count, state, swings)
+                                          — each processed frame; state is
+                                            NOT_TRACKED when the player's lower
+                                            body isn't fully visible; swings is
+                                            the live drill count (None without
+                                            a drill)
       ("done",  final_count)              — when source is exhausted or stopped
       ("error", message)                  — if the source cannot be opened
     """
 
     def __init__(self, frame_queue: queue.Queue, stop_event: threading.Event,
-                 use_lstm: bool = False):
+                 use_lstm: bool = False, drill: str | None = None, hand: str = "right"):
         self._queue    = frame_queue
         self._stop     = stop_event
         self._use_lstm = use_lstm
+        self._drill    = drill
+        self._hand     = hand
 
     def _source(self):
         """Return the cv2.VideoCapture source (int or str)."""
@@ -502,6 +520,11 @@ class _AnalysisWorker:
 
     def run(self) -> None:
         detector = self._make_detector()
+        swings = None
+        if self._drill:
+            from .strokes import LiveSwingCounter
+            swings = LiveSwingCounter(self._hand)
+            swing_name = self._drill.capitalize() + "s"
         cap = cv2.VideoCapture(self._source())
 
         if not cap.isOpened():
@@ -523,14 +546,20 @@ class _AnalysisWorker:
                         draw_landmarks(frame, img_lms)
                     if world_lms:
                         hop = detector.process(world_lms, img_lms)
+                        if swings is not None:
+                            swings.process(world_lms)
+                    tracked = bool(world_lms) and detector.tracking
 
-                    annotate_frame(frame, detector, hop)
+                    annotate_frame(frame, detector, hop,
+                                   f"{swing_name}: {swings.count}" if swings else None)
                     display = fit_frame(frame, CANVAS_W, CANVAS_H)
                     rgb_out = cv2.cvtColor(display, cv2.COLOR_BGR2RGB)
 
                     try:
                         self._queue.put_nowait(
-                            ("frame", rgb_out, detector.count, detector.state)
+                            ("frame", rgb_out, detector.count,
+                             detector.state if tracked else NOT_TRACKED,
+                             swings.count if swings else None)
                         )
                     except queue.Full:
                         pass

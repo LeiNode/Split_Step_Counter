@@ -1,0 +1,400 @@
+{
+  "count": 8,
+  "model": "rules",
+  "events": [
+    {
+      "timestamp_ms": 4500.0,
+      "hop_height": 0.206,
+      "landing_knee_angle": 101.4,
+      "landing_stance_ratio": 1.09,
+      "landing_ms": 4800.0,
+      "during_swing": false
+    },
+    {
+      "timestamp_ms": 5600.0,
+      "hop_height": 0.066,
+      "landing_knee_angle": 131.4,
+      "landing_stance_ratio": 2.13,
+      "landing_ms": 6066.7,
+      "during_swing": true
+    },
+    {
+      "timestamp_ms": 11033.3,
+      "hop_height": 0.058,
+      "landing_knee_angle": 113.4,
+      "landing_stance_ratio": 1.23,
+      "landing_ms": 11400.0,
+      "during_swing": true
+    },
+    {
+      "timestamp_ms": 13033.3,
+      "hop_height": 0.276,
+      "landing_knee_angle": 140.0,
+      "landing_stance_ratio": 2.1,
+      "landing_ms": 13266.7,
+      "during_swing": true
+    },
+    {
+      "timestamp_ms": 14266.7,
+      "hop_height": 0.091,
+      "landing_knee_angle": 109.8,
+      "landing_stance_ratio": 1.81,
+      "landing_ms": 14666.7,
+      "during_swing": false
+    },
+    {
+      "timestamp_ms": 15133.3,
+      "hop_height": 0.039,
+      "landing_knee_angle": 151.0,
+      "landing_stance_ratio": 3.08,
+      "landing_ms": 15733.3,
+      "during_swing": false
+    },
+    {
+      "timestamp_ms": 17666.7,
+      "hop_height": 0.144,
+      "landing_knee_angle": 124.7,
+      "landing_stance_ratio": 1.52,
+      "landing_ms": 17766.7,
+      "during_swing": false
+    },
+    {
+      "timestamp_ms": 18733.3,
+      "hop_height": 0.214,
+      "landing_knee_angle": 134.4,
+      "landing_stance_ratio": 0.61,
+      "landing_ms": 18966.7,
+      "during_swing": false
+    }
+  ],
+  "session": {
+    "duration_s": 19.03,
+    "pose_coverage": 1.0,
+    "split_steps_per_minute": 25.22,
+    "interval_s": {
+      "mean": 2.033,
+      "median": 1.233,
+      "min": 0.867,
+      "max": 5.433
+    },
+    "longest_gap_s": 5.43,
+    "hop_height": {
+      "mean": 0.137,
+      "median": 0.117,
+      "min": 0.039,
+      "max": 0.276
+    },
+    "landing_knee_angle": {
+      "mean": 125.763,
+      "median": 128.05,
+      "min": 101.4,
+      "max": 151.0
+    },
+    "landing_stance_ratio": {
+      "mean": 1.696,
+      "median": 1.665,
+      "min": 0.61,
+      "max": 3.08
+    },
+    "tips": [
+      "Solid split steps: good knee bend, base width and rhythm."
+    ]
+  },
+  "frames_tracked": 572,
+  "strokes": {
+    "drill": "auto",
+    "hand": "right",
+    "swings": [
+      {
+        "timestamp_ms": 733.3,
+        "stroke": "forehand",
+        "confidence": 0.62,
+        "peak_wrist_speed": 9.1,
+        "contact_height": 0.42,
+        "shoulder_turn_deg": 124.1,
+        "finish_above_shoulder_m": 0.22,
+        "load_knee_angle": 115.6,
+        "split_step_lead_ms": null,
+        "rally": 1,
+        "recovery_ms": 800.0,
+        "steps_before": null
+      },
+      {
+        "timestamp_ms": 1700.0,
+        "stroke": "unknown",
+        "confidence": 0.0,
+        "peak_wrist_speed": 12.1,
+        "contact_height": 0.28,
+        "shoulder_turn_deg": 52.6,
+        "finish_above_shoulder_m": 0.06,
+        "load_knee_angle": 139.6,
+        "split_step_lead_ms": null,
+        "rally": 1,
+        "recovery_ms": null,
+        "steps_before": 1
+      },
+      {
+        "timestamp_ms": 3266.7,
+        "stroke": "forehand",
+        "confidence": 0.54,
+        "peak_wrist_speed": 8.4,
+        "contact_height": 0.48,
+        "shoulder_turn_deg": 144.5,
+        "finish_above_shoulder_m": 0.3,
+        "load_knee_angle": 122.5,
+        "split_step_lead_ms": null,
+        "rally": 1,
+        "recovery_ms": 733.3,
+        "steps_before": 4
+      },
+      {
+        "timestamp_ms": 5766.7,
+        "stroke": "forehand",
+        "confidence": 0.86,
+        "peak_wrist_speed": 7.5,
+        "contact_height": 0.24,
+        "shoulder_turn_deg": 156.6,
+        "finish_above_shoulder_m": 0.05,
+        "load_knee_angle": 117.3,
+        "split_step_lead_ms": 1266.7,
+        "rally": 1,
+        "recovery_ms": 533.3,
+        "steps_before": 6
+      },
+      {
+        "timestamp_ms": 8433.3,
+        "stroke": "forehand",
+        "confidence": 0.94,
+        "peak_wrist_speed": 7.8,
+        "contact_height": 0.73,
+        "shoulder_turn_deg": 147.2,
+        "finish_above_shoulder_m": 0.07,
+        "load_knee_angle": 119.4,
+        "split_step_lead_ms": null,
+        "rally": 1,
+        "recovery_ms": 400.0,
+        "steps_before": 6
+      },
+      {
+        "timestamp_ms": 10833.3,
+        "stroke": "backhand",
+        "confidence": 0.79,
+        "peak_wrist_speed": 11.5,
+        "contact_height": 0.45,
+        "shoulder_turn_deg": 137.1,
+        "finish_above_shoulder_m": 0.14,
+        "load_knee_angle": 121.4,
+        "split_step_lead_ms": null,
+        "rally": 1,
+        "recovery_ms": null,
+        "steps_before": 3
+      },
+      {
+        "timestamp_ms": 13200.0,
+        "stroke": "forehand",
+        "confidence": 0.98,
+        "peak_wrist_speed": 6.8,
+        "contact_height": null,
+        "shoulder_turn_deg": 122.0,
+        "finish_above_shoulder_m": 0.12,
+        "load_knee_angle": 104.5,
+        "split_step_lead_ms": null,
+        "rally": 1,
+        "recovery_ms": null,
+        "steps_before": 6
+      },
+      {
+        "timestamp_ms": 15500.0,
+        "stroke": "forehand",
+        "confidence": 0.79,
+        "peak_wrist_speed": 8.5,
+        "contact_height": 0.4,
+        "shoulder_turn_deg": 134.5,
+        "finish_above_shoulder_m": 0.07,
+        "load_knee_angle": 98.4,
+        "split_step_lead_ms": 1233.3,
+        "rally": 1,
+        "recovery_ms": 566.7,
+        "steps_before": 3
+      }
+    ],
+    "summary": {
+      "forehand": {
+        "count": 6,
+        "contact_height": {
+          "mean": 0.45,
+          "median": 0.42,
+          "min": 0.24,
+          "max": 0.73
+        },
+        "finish_above_shoulder_m": {
+          "mean": 0.14,
+          "median": 0.1,
+          "min": 0.05,
+          "max": 0.3
+        },
+        "load_knee_angle": {
+          "mean": 112.95,
+          "median": 116.45,
+          "min": 98.4,
+          "max": 122.5
+        },
+        "peak_wrist_speed": {
+          "mean": 8.02,
+          "median": 8.1,
+          "min": 6.8,
+          "max": 9.1
+        },
+        "shoulder_turn_deg": {
+          "mean": 138.15,
+          "median": 139.5,
+          "min": 122.0,
+          "max": 156.6
+        },
+        "consistency": 67
+      },
+      "backhand": {
+        "count": 1,
+        "contact_height": {
+          "mean": 0.45,
+          "median": 0.45,
+          "min": 0.45,
+          "max": 0.45
+        },
+        "finish_above_shoulder_m": {
+          "mean": 0.14,
+          "median": 0.14,
+          "min": 0.14,
+          "max": 0.14
+        },
+        "load_knee_angle": {
+          "mean": 121.4,
+          "median": 121.4,
+          "min": 121.4,
+          "max": 121.4
+        },
+        "peak_wrist_speed": {
+          "mean": 11.5,
+          "median": 11.5,
+          "min": 11.5,
+          "max": 11.5
+        },
+        "shoulder_turn_deg": {
+          "mean": 137.1,
+          "median": 137.1,
+          "min": 137.1,
+          "max": 137.1
+        },
+        "consistency": null
+      },
+      "unknown": {
+        "count": 1,
+        "contact_height": {
+          "mean": 0.28,
+          "median": 0.28,
+          "min": 0.28,
+          "max": 0.28
+        },
+        "finish_above_shoulder_m": {
+          "mean": 0.06,
+          "median": 0.06,
+          "min": 0.06,
+          "max": 0.06
+        },
+        "load_knee_angle": {
+          "mean": 139.6,
+          "median": 139.6,
+          "min": 139.6,
+          "max": 139.6
+        },
+        "peak_wrist_speed": {
+          "mean": 12.1,
+          "median": 12.1,
+          "min": 12.1,
+          "max": 12.1
+        },
+        "shoulder_turn_deg": {
+          "mean": 52.6,
+          "median": 52.6,
+          "min": 52.6,
+          "max": 52.6
+        }
+      }
+    },
+    "tips": [
+      "Forehand: technique metrics look solid. Keep it up!",
+      "Backhand: technique metrics look solid. Keep it up!"
+    ]
+  },
+  "timing": {
+    "shots": 8,
+    "shots_with_split_step": 2,
+    "fraction_with_split_step": 0.25,
+    "median_lead_ms": 1250.0,
+    "split_steps_during_swings": 3,
+    "tips": [
+      "Only 2 of 8 shots had a split step before them. Make it a habit: a small hop as your opponent hits, then move."
+    ]
+  },
+  "rallies": {
+    "rallies": [
+      {
+        "start_ms": 733.3,
+        "end_ms": 15500.0,
+        "shots": 8,
+        "strokes": {
+          "forehand": 6,
+          "unknown": 1,
+          "backhand": 1
+        }
+      }
+    ],
+    "summary": {
+      "rallies": 1,
+      "mean_shots": 8.0,
+      "longest": 8,
+      "tips": []
+    }
+  },
+  "recovery": {
+    "shots_measured": 8,
+    "recovered": 5,
+    "fraction_recovered": 0.625,
+    "median_recovery_ms": 566.7,
+    "tips": []
+  },
+  "camera": {
+    "view": "side",
+    "fractions": {
+      "back": 0.196,
+      "front": 0.395,
+      "side": 0.409
+    },
+    "tips": [
+      "Most of this video shows the player from the side. The split-step model was trained mainly on footage filmed from behind the player, so split-step counts may be less reliable here. For best results, film from behind the baseline."
+    ]
+  },
+  "footwork": {
+    "steps": 50,
+    "steps_per_minute": 157.6,
+    "median_steps_between_shots": 4.0,
+    "tips": []
+  },
+  "coach": {
+    "focus": [
+      "Most of this video shows the player from the side. The split-step model was trained mainly on footage filmed from behind the player, so split-step counts may be less reliable here. For best results, film from behind the baseline.",
+      "Only 2 of 8 shots had a split step before them. Make it a habit: a small hop as your opponent hits, then move."
+    ],
+    "strengths": [
+      "Solid split steps: good knee bend, base width and rhythm.",
+      "Forehand: technique metrics look solid. Keep it up!",
+      "Backhand: technique metrics look solid. Keep it up!"
+    ],
+    "more": 0
+  },
+  "frames": 572,
+  "frames_with_pose": 572,
+  "duration_ms": 19033.3,
+  "fps": 30.0,
+  "processing_s": 8.332
+}

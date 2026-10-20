@@ -1,0 +1,377 @@
+// Drives web/index.html in jsdom with a mocked API (fixture = a real analysis
+// of a pro practice clip). Run:  cd tests/web && npm install && npm test
+const fs = require("fs");
+const { JSDOM } = require("jsdom");
+const path = require("path");
+const page = path.join(__dirname, "..", "..", "web", "index.html");
+const respPath = path.join(__dirname, "analysis_fixture.json");
+const html = fs.readFileSync(page, "utf8");
+const analysis = JSON.parse(fs.readFileSync(respPath, "utf8"));
+let failures = 0;
+const check = (cond, msg) => { console.log((cond ? "ok   " : "FAIL ") + msg); if (!cond) failures++; };
+const tick = () => new Promise((r) => setTimeout(r, 30));
+const sec2 = (ms) => (ms / 1000).toFixed(2) + " s";
+
+async function load(flags, { uploadsConfigured = false, response = analysis, rateLeft = null } = {}) {
+  const calls = [];
+  const dom = new JSDOM(html, {
+    url: "http://localhost:8000/app/", runScripts: "dangerously", pretendToBeVisual: true,
+    beforeParse(window) {
+      window.URL.createObjectURL = () => "blob:fake";
+      window.HTMLMediaElement.prototype.play = () => {};
+      // jsdom's Blob has no text() (every current browser does)
+      window.Blob.prototype.text ??= function () {
+        return new Promise((r) => { const fr = new window.FileReader(); fr.onload = () => r(fr.result); fr.readAsText(this); });
+      };
+      window.fetch = async (url, opts = {}) => {
+        calls.push(url);
+        const json = (status, body) => ({ ok: status < 400, status, json: async () => body,
+                                          headers: { get: (h) => (h === "X-RateLimit-Remaining" ? rateLeft : null) } });
+        if (url.endsWith("/v1/features")) return json(200, { features: flags });
+        if (url.includes("/v1/upload-url"))
+          return uploadsConfigured ? json(500, { detail: "boom" }) : json(501, { detail: "Browser uploads are not configured (UPLOAD_BUCKET unset)." });
+        if (url.includes("/v1/count")) return json(200, response);
+        if (url.includes("/v1/report")) { calls.push(opts.body); return { ok: true, status: 200, text: async () => "# report\n" }; }
+        return json(404, {});
+      };
+    },
+  });
+  await tick();
+  return { dom, doc: dom.window.document, calls };
+}
+
+const ALL = { coach_summary: true, drill_goals: true, pose_overlay: true, report_download: true, rally_stats: true, session_history: true, split_step_timing: true, split_step_counting: true, split_step_metrics: true, stroke_training: true,
+  forehand_training: true, backhand_training: true, serve_training: true, auto_stroke_detection: true,
+  lstm_model: true, rules_model: true, direct_upload: true, browser_uploads: true, live_view: true };
+
+function chooseFile(dom) {
+  const input = dom.window.document.getElementById("video");
+  const file = new dom.window.File(["x"], "clip.mp4", { type: "video/mp4" });
+  Object.defineProperty(input, "files", { value: [file] });
+  input.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+}
+
+(async () => {
+  // 1. Everything on
+  let { dom, doc, calls } = await load(ALL);
+  const modes = () => [...doc.querySelectorAll('input[name="mode"]')].map((i) => i.value);
+  check(modes().join() === "split,forehand,backhand,serve,auto", "all five modes shown: " + modes());
+  check(doc.getElementById("go").disabled, "Analyse disabled before a file is chosen");
+  chooseFile(dom);
+  check(!doc.getElementById("go").disabled, "Analyse enabled after choosing a file");
+  // Goals: one achievable (the fixture has 8 swings in one rally), one not, one unmeasurable
+  const setGoal = (key, v) => { const i = doc.getElementById("goal-" + key); i.value = v; i.dispatchEvent(new dom.window.Event("change")); };
+  check(doc.querySelectorAll("#goals-form input").length === 9, "goal inputs built");
+  setGoal("rally", 5); setGoal("with_split", 90); setGoal("split_rate", 1);
+  doc.querySelector('input[value="auto"]').click();
+  doc.getElementById("model").value = "rules";
+  doc.getElementById("go").click();
+  await tick(); await tick();
+  const countCall = calls.find((u) => u.includes("/v1/count?"));
+  check(countCall.includes("include_pose=true"), "asks for the skeleton when the overlay is on");
+  check(countCall && countCall.includes("drill=auto") && countCall.includes("model=rules") && countCall.includes("hand=auto"),
+        "falls back to direct upload with drill/model/hand: " + countCall);
+  const goalText = doc.getElementById("goal-list").textContent;
+  check(!doc.getElementById("goal-results").hidden && doc.querySelectorAll("#goal-list li").length === 3, "three goals listed");
+  check(/✓ Met · Longest rally/.test(goalText), "achieved goal marked met: " + goalText.slice(0, 60));
+  check(/✗ Not yet · Shots with a split step before them/.test(goalText), "missed goal marked not yet");
+  check(/✓ Met · Split steps per minute/.test(goalText), "split-step goal met");
+  setGoal("rally", ""); setGoal("with_split", ""); setGoal("split_rate", "");
+  check(Object.keys(JSON.parse(dom.window.localStorage.getItem("tennis-trainer-goals-v1"))).length === 0, "clearing a box removes the goal");
+  check(!doc.getElementById("coach").hidden && doc.querySelectorAll("#coach-focus li").length >= 1, "coach's summary shown");
+  check(doc.getElementById("coach-focus").textContent.includes("film from behind"), "camera tip prioritised first");
+  check(!doc.getElementById("split-results").hidden, "split-step results shown");
+  check(!doc.getElementById("camera-notice").hidden && doc.getElementById("camera-notice").textContent.includes("film from behind"),
+        "camera-angle warning shown");
+  check(doc.querySelectorAll("#split-table tr").length === analysis.events.length + 1, "one split-step row per event");
+  check(!doc.getElementById("stroke-results").hidden, "stroke results shown");
+  check(doc.querySelectorAll("#stroke-table tr").length === analysis.strokes.swings.length + 1, "one row per swing");
+  check(doc.getElementById("stroke-table").textContent.includes("backhand"), "stroke types rendered");
+  check(doc.getElementById("stroke-tips").children.length > 0, "stroke tips rendered");
+  check(doc.getElementById("stroke-stats").textContent.includes("Forehand consistency"), "consistency score shown");
+  check(doc.getElementById("stroke-stats").textContent.includes("Split step before shot"), "timing stat shown");
+  check(doc.getElementById("stroke-table").textContent.includes("Split step before"), "lead-time column shown");
+  check(doc.getElementById("split-table").textContent.includes("hop during a swing"), "swing hops marked");
+  const link = doc.querySelector("#split-table a.ts");
+  link.click();
+  check(Math.abs(doc.getElementById("player").currentTime - Math.max(0, analysis.events[0].timestamp_ms / 1000 - 1)) < 0.01,
+        "clicking a timestamp seeks the video");
+  check(doc.getElementById("status").textContent.startsWith("Done"), "status says done: " + doc.getElementById("status").textContent);
+
+  // Timeline: one marker per real split step + one per swing
+  const expected = analysis.events.filter((e) => !e.during_swing).length + analysis.strokes.swings.length;
+  const markers = doc.querySelectorAll("#timeline .mk");
+  check(!doc.getElementById("timeline-box").hidden && markers.length === expected,
+        `timeline has ${markers.length} markers (expected ${expected})`);
+  check(doc.querySelectorAll("#timeline .mk.k-backhand").length === analysis.strokes.swings.filter((s) => s.stroke === "backhand").length,
+        "markers coloured by stroke");
+  const last = markers[markers.length - 1];
+  last.click();
+  check(doc.getElementById("player").currentTime > 0, "clicking a marker seeks the video");
+
+  // Playback: shot-to-shot navigation, frame stepping, slow motion
+  const player = doc.getElementById("player");
+  const marksMs = [...analysis.events.filter((e) => !e.during_swing).map((e) => e.timestamp_ms),
+                   ...analysis.strokes.swings.map((s) => s.timestamp_ms)].sort((a, b) => a - b);
+  const parkedAt = (ms) => Math.abs(player.currentTime - Math.max(0, ms / 1000 - 1)) < 0.01;
+  check(!doc.getElementById("playback").hidden && !doc.getElementById("next-shot").disabled, "playback controls shown");
+  player.currentTime = 0; doc.getElementById("next-shot").click();
+  const firstAfter = marksMs.find((m) => m > 1250);
+  check(parkedAt(firstAfter), "Next jumps to the next shot");
+  doc.getElementById("next-shot").click();
+  const second = marksMs.find((m) => m > firstAfter + 250);
+  check(parkedAt(second), "Next again moves on");
+  doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "[" }));
+  check(parkedAt(firstAfter), "[ key goes back a shot");
+  const before = player.currentTime;
+  doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "." }));
+  check(Math.abs(player.currentTime - before - 1 / analysis.fps) < 0.001, ". steps one frame forward");
+  // Current-row highlight follows the video
+  const sw3 = analysis.strokes.swings[3].timestamp_ms;
+  player.currentTime = sw3 / 1000 + 0.2; player.dispatchEvent(new dom.window.Event("timeupdate"));
+  const cur = [...doc.querySelectorAll("#stroke-table tr")].findIndex((r) => r.classList.contains("current"));
+  check(cur === 4 && doc.querySelectorAll("#stroke-table tr.current").length === 1, "row of the swing on screen is highlighted");
+  player.currentTime = 0.0; player.dispatchEvent(new dom.window.Event("timeupdate"));
+  check(doc.querySelectorAll("#split-table tr.current").length === 0, "no split-step row marked away from any split step");
+  const sp = doc.getElementById("speed");
+  sp.value = "0.25"; sp.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  check(player.playbackRate === 0.25, "slow motion sets the playback rate");
+
+  // Swing speed chart: one dot per swing, legend for several stroke types, click seeks
+  const dots = doc.querySelectorAll("#speed-chart circle.dot");
+  check(!doc.getElementById("speed-box").hidden && dots.length === analysis.strokes.swings.length, `speed chart has ${dots.length} dots`);
+  check(doc.getElementById("speed-legend").textContent.includes("Backhand"), "speed chart legend lists strokes");
+  dots[0].dispatchEvent(new dom.window.FocusEvent("focus"));
+  check(!doc.getElementById("speed-tip").hidden && doc.getElementById("speed-tip").textContent.includes("m/s"), "focusing a dot shows its speed");
+  dots[3].dispatchEvent(new dom.window.Event("click"));
+  check(Math.abs(player.currentTime - Math.max(0, analysis.strokes.swings[3].timestamp_ms / 1000 - 1)) < 0.01, "clicking a dot seeks");
+
+  // Rallies
+  check(doc.getElementById("stroke-stats").textContent.includes("Longest rally"), "rally stats shown");
+  check(doc.getElementById("stroke-table").textContent.includes("Rally"), "rally column shown");
+  check(doc.getElementById("stroke-table").textContent.includes("Back to ready"), "recovery column shown");
+  check(doc.getElementById("stroke-stats").textContent.includes("Recovery"), "recovery stat shown");
+  check(doc.getElementById("stroke-table").textContent.includes("Steps before"), "adjustment-steps column shown");
+  check(doc.getElementById("split-stats").textContent.includes("Steps per minute"), "steps per minute shown");
+
+  // Downloads: capture the generated CSV
+  let saved = null;
+  dom.window.URL.createObjectURL = (blob) => { saved = blob; return "blob:x"; };
+  check(!doc.getElementById("downloads").hidden, "download buttons shown");
+  doc.getElementById("dl-csv").click();
+  const readBlob = (b) => new Promise((r) => { const fr = new dom.window.FileReader(); fr.onload = () => r(fr.result); fr.readAsText(b); });
+  const csv = saved ? await readBlob(saved) : "";
+  const lines = csv.trim().split("\n");
+  check(lines.length === 1 + analysis.events.length + analysis.strokes.swings.length, `CSV has a row per event and swing (${lines.length - 1})`);
+  check(lines[0].startsWith("type,timestamp_ms"), "CSV header: " + lines[0].slice(0, 40));
+  check(csv.includes("forehand") && csv.includes("split step"), "CSV contains shots and split steps");
+  let printedAs = null;
+  dom.window.print = () => { printedAs = doc.title; };
+  doc.getElementById("print-report").click();
+  check(printedAs === "clip-tennis-report" && doc.title === "Tennis Trainer", "print uses the report name, then restores the title");
+  doc.getElementById("dl-md").click(); await tick();
+  const mdBody = JSON.parse(calls[calls.length - 1]);
+  check(saved && (await readBlob(saved)) === "# report\n" && mdBody.title === "clip.mp4" && !("pose" in mdBody.result),
+        "Markdown report fetched without the skeleton and downloaded");
+  doc.getElementById("dl-json").click();
+  check(saved && JSON.parse(await readBlob(saved)).count === analysis.count, "JSON report round-trips");
+
+  // History: saved after each analysis, clearable
+  const rows = () => doc.querySelectorAll("#history-table tr").length - 1;
+  check(!doc.getElementById("history").hidden && rows() === 1, "history has the session");
+  check(doc.getElementById("history-table").textContent.includes("Match play"), "history shows the mode");
+  doc.getElementById("go").click();
+  await tick(); await tick();
+  check(rows() === 2, "second analysis adds a row");
+  // Notes: typed into the history table, saved, shown in the chart tooltip
+  const note = doc.querySelector("#history-table input.note");
+  check(!!note, "note box in history rows");
+  note.value = "  windy, new strings  "; note.dispatchEvent(new dom.window.Event("change"));
+  check(JSON.parse(dom.window.localStorage.getItem("tennis-trainer-history-v1"))[0].note === "windy, new strings", "note saved, trimmed");
+  doc.querySelectorAll("#chart circle.pt")[1].dispatchEvent(new dom.window.FocusEvent("focus"));
+  check(doc.getElementById("chart-tip").textContent.includes("windy, new strings"), "note shown in chart tooltip");
+  // Compare: tick both sessions; identical results -> "same" everywhere
+  const ticks = () => doc.querySelectorAll("#history-table input[type=checkbox]");
+  check(ticks().length === 2 && doc.getElementById("compare-table").hidden, "compare boxes, no table yet");
+  ticks()[0].click();
+  check(doc.getElementById("compare-hint").textContent.includes("one more"), "asks for a second session");
+  ticks()[1].click();
+  const cmp = doc.getElementById("compare-table");
+  check(!cmp.hidden && cmp.rows.length > 3 && cmp.textContent.includes("Split steps per minute"), "comparison table shown");
+  check([...cmp.rows].slice(1).every((r) => r.cells[3].textContent === "same"), "identical sessions compare as same");
+  // Make the newer session better on knee bend and worse on recovery
+  const hist = JSON.parse(dom.window.localStorage.getItem("tennis-trainer-history-v1"));
+  hist[0].knee = hist[1].knee - 10; hist[0].recovery = (hist[1].recovery ?? 1) + 0.5; hist[1].recovery = hist[1].recovery ?? 1;
+  dom.window.localStorage.setItem("tennis-trainer-history-v1", JSON.stringify(hist));
+  ticks()[0].click(); ticks()[0].click();   // untick + retick re-renders from storage
+  const cmpRow = (label) => [...cmp.rows].find((r) => r.cells[0].textContent.startsWith(label));
+  check(/▼ −10° better/.test(cmpRow("Landing knee").cells[3].textContent), "lower knee angle marked better: " + cmpRow("Landing knee").cells[3].textContent);
+  check(/▲ \+0\.5 s worse/.test(cmpRow("Back to ready").cells[3].textContent), "slower recovery marked worse");
+  check(cmpRow("Swings").cells[3].textContent === "same", "neutral metric has no verdict");
+  // Progress chart: appears from the second session, one marker per session
+  check(!doc.getElementById("chart-wrap").hidden, "progress chart shown with two sessions");
+  const metricOpts = [...doc.querySelectorAll("#chart-metric option")].map((o) => o.value);
+  check(metricOpts.includes("per_min") && metricOpts.includes("consistency"), "chart metrics offered: " + metricOpts);
+  check(doc.querySelectorAll("#chart circle.pt").length === 2 && doc.querySelector("#chart polyline"), "line with a marker per session");
+  doc.querySelector("#chart circle.pt").dispatchEvent(new dom.window.FocusEvent("focus"));
+  check(!doc.getElementById("chart-tip").hidden && doc.getElementById("chart-tip").textContent.includes("clip.mp4"),
+        "focusing a point shows its tooltip");
+  const sel = doc.getElementById("chart-metric");
+  sel.value = "knee"; sel.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  check(doc.getElementById("chart").getAttribute("aria-label").startsWith("Landing knee"), "switching metric redraws");
+  const svgOut = doc.getElementById("chart").outerHTML;
+  // Export, then import into a cleared history (plus one session that's new)
+  saved = null;
+  doc.getElementById("export-history").click();
+  const exported = JSON.parse(await readBlob(saved));
+  check(exported.app === "tennis-trainer" && exported.sessions.length === 2, "history exported with both sessions");
+  doc.getElementById("clear-history").click();
+  check(!doc.getElementById("history").hidden && doc.getElementById("history-table").hidden,
+        "cleared history keeps the card for importing, table hidden");
+  const older = { ...exported.sessions[1], date: "2025-01-02T10:00:00.000Z", file: "old.mp4" };
+  const importFile = async (text) => {
+    const input = doc.getElementById("import-file");
+    Object.defineProperty(input, "files", { value: [new dom.window.File([text], "h.json", { type: "application/json" })], configurable: true });
+    input.dispatchEvent(new dom.window.Event("change")); await tick();
+  };
+  await importFile(JSON.stringify({ ...exported, sessions: [...exported.sessions, older] }));
+  check(rows() === 3 && doc.getElementById("status").textContent.startsWith("Imported 3 new sessions"), "import restores sessions: " + doc.getElementById("status").textContent);
+  await importFile(JSON.stringify(exported));
+  check(rows() === 3 && doc.getElementById("status").textContent.startsWith("Imported 0 new"), "re-import adds no duplicates");
+  check(doc.querySelector("#history-table tr:last-child").textContent.includes("old.mp4"), "imported sessions sorted by date");
+  await importFile("not json");
+  check(doc.getElementById("status").className.includes("error"), "bad file reported");
+  doc.getElementById("clear-history").click();
+  check(doc.getElementById("history-table").hidden, "clear history empties the table");
+  if (process.env.CHART_SVG_OUT) require("fs").writeFileSync(process.env.CHART_SVG_OUT, svgOut);
+
+  // 2. Serve + auto off, rules model off
+  ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
+  check(modes().join() === "split,forehand,backhand", "disabled modes removed: " + modes());
+  ({ dom, doc, calls } = await load({ ...ALL, session_history: false, report_download: false, pose_overlay: false, drill_goals: false }));
+  check(!doc.getElementById("goal-settings") && !doc.getElementById("goal-results"), "goals removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, coach_summary: false }));
+  check(!doc.getElementById("coach"), "coach summary removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, practice_plan: false }));
+  check(doc.getElementById("coach") && !doc.getElementById("practice"), "practice plan removed on its own");
+  ({ dom, doc, calls } = await load({ ...ALL, session_history: false, report_download: false, pose_overlay: false, drill_goals: false }));
+  check(!doc.getElementById("history"), "history section removed when switched off");
+  check(!doc.getElementById("overlay") && !doc.getElementById("show-skeleton"), "overlay removed when switched off");
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  check(!calls.some((u) => u.includes("include_pose")), "no skeleton requested when overlay is off");
+  check(!doc.getElementById("downloads"), "download buttons removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, playback_controls: false }));
+  check(!doc.getElementById("playback"), "playback controls removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, swing_highlights: false }));
+  check(!doc.getElementById("highlights"), "highlights removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, side_by_side: false }));
+  check(!doc.getElementById("sbs"), "side by side removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, swing_chart: false }));
+  check(!doc.getElementById("speed-box"), "speed chart removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, session_compare: false }));
+  check(!doc.getElementById("compare"), "compare removed when switched off");
+  ({ dom, doc } = await load({ ...ALL, session_notes: false }));
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  check(!doc.querySelector("#history-table input.note") && !doc.getElementById("history-table").textContent.includes("Notes"),
+        "notes column removed when switched off");
+  doc.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "]" }));   // must not throw
+  ({ dom, doc } = await load({ ...ALL, serve_training: false, auto_stroke_detection: false, rules_model: false }));
+  check([...doc.querySelectorAll("#model option")].map((o) => o.value).join() === "lstm", "disabled model removed");
+
+  // 3. Stroke training off entirely
+  ({ dom, doc } = await load({ ...ALL, stroke_training: false, forehand_training: false, backhand_training: false,
+                               serve_training: false, auto_stroke_detection: false }));
+  check(modes().join() === "split", "only split steps left");
+  check(!doc.getElementById("hand"), "hand picker removed with stroke training");
+
+  // 4. Split steps off: first stroke mode becomes default, model picker hidden
+  ({ dom, doc } = await load({ ...ALL, split_step_counting: false, split_step_metrics: false }));
+  check(doc.querySelector('input[name="mode"]:checked').value === "forehand", "first remaining mode preselected");
+  check(doc.getElementById("model-picker").hidden, "model picker hidden without split-step counting");
+
+  // 4b. Clip range: m:ss parsed into start_s / end_s; bad input stops before uploading
+  ({ dom, doc, calls } = await load(ALL));
+  chooseFile(dom);
+  doc.getElementById("range-start").value = "1:15"; doc.getElementById("range-end").value = "90.5";
+  doc.getElementById("go").click(); await tick(); await tick();
+  const rangeCall = calls.find((u) => u.includes("/v1/count?"));
+  check(rangeCall.includes("start_s=75") && rangeCall.includes("end_s=90.5"), "range sent as seconds: " + rangeCall);
+  const before5 = calls.length;
+  doc.getElementById("range-end").value = "1:00";
+  doc.getElementById("go").click(); await tick();
+  check(calls.length === before5 && doc.getElementById("status").textContent.includes("end time must be after"), "end before start rejected");
+  doc.getElementById("range-end").value = "soon";
+  doc.getElementById("go").click(); await tick();
+  check(doc.getElementById("status").textContent.includes("Can't read \"soon\""), "unreadable time rejected");
+  const sw0 = analysis.strokes.swings;
+  ({ dom, doc } = await load(ALL, { response: { ...analysis, range_ms: [sw0[0].timestamp_ms, analysis.duration_ms] } }));
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  const firstMk = [...doc.querySelectorAll("#timeline .mk")].find((b) => b.title.includes(sec2(sw0[0].timestamp_ms)));
+  check(firstMk && parseFloat(firstMk.style.left) === 0, "timeline starts at the analysed range: " + (firstMk && firstMk.style.left));
+  ({ dom, doc } = await load({ ...ALL, clip_range: false }));
+  check(!doc.getElementById("range-row"), "range inputs removed when switched off");
+
+  // 4c. Rate limit: the remaining allowance is shown once it gets low
+  ({ dom, doc } = await load(ALL, { rateLeft: "3" }));
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  check(doc.getElementById("status").textContent.includes("3 analyses left this hour"), "low rate allowance shown");
+  ({ dom, doc } = await load(ALL, { rateLeft: "17" }));
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  check(!doc.getElementById("status").textContent.includes("left this hour"), "plenty left: not mentioned");
+
+  // 5. Upload error surfaces (not silently swallowed) when uploads ARE configured
+  ({ dom, doc } = await load(ALL, { uploadsConfigured: true }));
+  chooseFile(dom);
+  doc.getElementById("go").click();
+  await tick(); await tick();
+  check(doc.getElementById("status").textContent.includes("boom"), "real upload errors shown: " + doc.getElementById("status").textContent);
+
+  // 5b. New technique metrics tracked in history, chart and goals
+  const withTech = JSON.parse(JSON.stringify(analysis));
+  withTech.strokes.swings.forEach((s, i) => { s.head_movement_m = 0.04 + 0.01 * i; s.prep_lead_ms = 500 + 100 * i; });
+  ({ dom, doc } = await load(ALL, { response: withTech }));
+  const g = (k, v) => { const i = doc.getElementById("goal-" + k); i.value = v; i.dispatchEvent(new dom.window.Event("change")); };
+  g("head", 5); g("prep", 0.5); g("steps_min", 1000);
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  const saved1 = JSON.parse(dom.window.localStorage.getItem("tennis-trainer-history-v1"))[0];
+  const gs = withTech.strokes.swings.filter((s) => s.stroke === "forehand" || s.stroke === "backhand");
+  check(saved1.head > 4 && saved1.head < 4 + gs.length && saved1.prep >= 0.5 && saved1.steps_min === withTech.footwork.steps_per_minute,
+        `new metrics saved to history: head ${saved1.head} cm, prep ${saved1.prep} s`);
+  const gl = doc.getElementById("goal-list").textContent;
+  check(/✗ Not yet · Head movement at contact/.test(gl) && /✓ Met · Shoulders turned before contact/.test(gl)
+        && /✗ Not yet · Steps per minute/.test(gl), "goals judged on the new metrics: " + gl.slice(0, 80));
+  doc.getElementById("go").click(); await tick(); await tick();
+  check([...doc.querySelectorAll("#chart-metric option")].some((o) => o.value === "prep"), "prep offered as a chart metric");
+
+  // 6. Fatigue trend: late-vs-early change shown, its tip listed
+  const fatigue = { measured: true, tips: ["You fade late in the session: swing speed (-17%) ..."],
+                    metrics: { peak_wrist_speed: { early: 12, late: 10, change: -0.167, dropped: true } } };
+  const sw = analysis.strokes.swings;
+  const highlights = { forehand: { typical: { timestamp_ms: sw[0].timestamp_ms }, fastest: { timestamp_ms: sw[1].timestamp_ms },
+                                   outlier: { timestamp_ms: sw[2].timestamp_ms, label: "contact height 1.10, usually 0.43" } } };
+  const drills = [{ name: "Watch the strings", how: "Keep your eyes on the contact point.", dose: "2 sets of 10 balls", for: "..." }];
+  ({ dom, doc } = await load(ALL, { response: { ...analysis, fatigue, highlights, coach: { ...analysis.coach, drills } } }));
+  chooseFile(dom); doc.getElementById("go").click(); await tick(); await tick();
+  check(!doc.getElementById("practice").hidden && doc.getElementById("practice-list").textContent.includes("Watch the strings 2 sets of 10 balls"),
+        "practice drills listed: " + doc.getElementById("practice-list").textContent);
+  const hl = doc.getElementById("highlight-list");
+  check(!doc.getElementById("highlights").hidden && hl.querySelectorAll("a.ts").length === 3, "highlights listed with 3 seek links");
+  check(hl.textContent.includes("odd one out") && hl.textContent.includes("usually 0.43"), "outlier explained: " + hl.textContent);
+  const sbsBtn = [...hl.querySelectorAll("button")].find((b) => b.textContent === "Side by side");
+  check(!!sbsBtn && doc.getElementById("sbs").hidden, "side-by-side button offered");
+  sbsBtn.click();
+  const va = doc.getElementById("sbs-a"), vb = doc.getElementById("sbs-b");
+  check(!doc.getElementById("sbs").hidden && va.playbackRate === 0.25
+        && Math.abs(va.currentTime - Math.max(0, sw[0].timestamp_ms / 1000 - 1)) < 0.01
+        && Math.abs(vb.currentTime - Math.max(0, sw[2].timestamp_ms / 1000 - 1)) < 0.01, "both moments cued at ¼ speed");
+  check(doc.getElementById("sbs-b-cap").textContent.includes("usually 0.43"), "outlier caption explains it");
+  doc.getElementById("sbs-close").click();
+  check(doc.getElementById("sbs").hidden, "close hides the comparison");
+  hl.querySelectorAll("a.ts")[2].click();
+  check(Math.abs(doc.getElementById("player").currentTime - Math.max(0, sw[2].timestamp_ms / 1000 - 1)) < 0.01, "highlight link seeks");
+  check(/Swing speed, late vs early.*−17%/.test(doc.getElementById("stroke-stats").textContent), "fatigue stat shown");
+  check(doc.getElementById("stroke-tips").textContent.includes("You fade late"), "fatigue tip listed");
+
+  console.log(failures ? `${failures} FAILED` : "ALL PASSED");
+  process.exit(failures ? 1 : 0);
+})();

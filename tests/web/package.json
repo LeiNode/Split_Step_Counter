@@ -1,0 +1,6 @@
+{
+  "name": "tennis-trainer-ui-tests",
+  "private": true,
+  "scripts": { "test": "node ui_test.js" },
+  "devDependencies": { "jsdom": "24.1.3" }
+}

@@ -15,8 +15,8 @@ from .detector import _AnalysisWorker
 
 class VideoAnalysis(_AnalysisWorker):
     def __init__(self, video_path: str, frame_queue: queue.Queue,
-                 stop_event: threading.Event, use_lstm: bool = False):
-        super().__init__(frame_queue, stop_event, use_lstm)
+                 stop_event: threading.Event, use_lstm: bool = False, **drill):
+        super().__init__(frame_queue, stop_event, use_lstm, **drill)
         self._video_path = video_path
 
     def _source(self):

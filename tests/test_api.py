@@ -40,6 +40,12 @@ def test_count_upload(model):
     assert body["count"] == len(body["events"]) >= 0
     assert body["frames"] > 300 and 0 < body["frames_with_pose"] <= body["frames"]
     assert body["duration_ms"] > 10_000
+    s = body["session"]
+    assert 0 < s["pose_coverage"] <= 1 and s["duration_s"] > 10 and s["tips"]
+    for e in body["events"]:
+        assert {"hop_height", "landing_knee_angle", "landing_stance_ratio"} <= e.keys()
+        if e["landing_knee_angle"] is not None:
+            assert 30 < e["landing_knee_angle"] <= 180
 
 
 @needs_video
@@ -141,3 +147,38 @@ def test_upload_url_issues_presigned_post(fake_aws):
 def test_count_s3_locked_to_issued_keys(fake_aws, bucket, key):
     r = client.post("/v1/count/s3", json={"bucket": bucket, "key": key})
     assert r.status_code == 403
+
+
+def test_web_app_served():
+    r = client.get("/app/")
+    assert r.status_code == 200 and "Tennis Trainer" in r.text
+
+
+def test_markdown_report():
+    import json
+    result = json.loads((REPO / "tests" / "web" / "analysis_fixture.json").read_text(encoding="utf-8"))
+    r = client.post("/v1/report", json={"result": result, "title": "match.mp4"})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/markdown")
+    assert r.text.startswith("# match.mp4\n") and "## Strokes" in r.text
+    assert client.post("/v1/report", json={"result": {"count": 3}}).status_code == 422
+
+
+def test_markdown_report_switch(monkeypatch):
+    monkeypatch.setenv("SPLIT_STEP_FEATURES", "markdown_report=off")
+    assert client.post("/v1/report", json={"result": {}}).status_code == 404
+
+
+def test_clip_range_checked(monkeypatch, tmp_path):
+    from tests.test_analyze import _clip
+    clip = tmp_path / "c.mp4"
+    _clip(clip, 30, seconds=3)
+    with open(clip, "rb") as f:
+        r = client.post("/v1/count?model=rules&start_s=1&end_s=2", files={"file": ("c.mp4", f, "video/mp4")})
+    assert r.status_code == 200 and 1000 <= r.json()["range_ms"][0] < 1100
+    with open(clip, "rb") as f:
+        assert client.post("/v1/count?model=rules&start_s=2&end_s=1",
+                           files={"file": ("c.mp4", f, "video/mp4")}).status_code == 422
+    monkeypatch.setenv("SPLIT_STEP_FEATURES", "clip_range=off")
+    with open(clip, "rb") as f:
+        assert client.post("/v1/count?model=rules&start_s=1",
+                           files={"file": ("c.mp4", f, "video/mp4")}).status_code == 404

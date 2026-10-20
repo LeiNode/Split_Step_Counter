@@ -23,6 +23,8 @@ ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 BUCKET="${UPLOAD_BUCKET:-${NAME}-uploads-${ACCOUNT}-${REGION}}"
 ALLOWED_ORIGINS="${ALLOWED_ORIGINS:?Set ALLOWED_ORIGINS to your website origin, e.g. https://www.example.com}"
 MAX_UPLOAD_MB="${MAX_UPLOAD_MB:-200}"
+MAX_VIDEO_SECONDS="${MAX_VIDEO_SECONDS:-600}"
+RATE_LIMIT_PER_HOUR="${RATE_LIMIT_PER_HOUR:-20}"
 # Hard cap on simultaneous executions = hard cap on cost from abuse.
 CONCURRENCY="${CONCURRENCY:-3}"
 
@@ -76,7 +78,7 @@ docker push "${REPO_URI}:latest"
 
 # ── Function ──────────────────────────────────────────────────────────────────
 # JSON form, because the shorthand syntax can't hold commas inside ALLOWED_ORIGINS
-ENV_VARS="{\"Variables\": {\"UPLOAD_BUCKET\": \"${BUCKET}\", \"ALLOWED_ORIGINS\": \"${ALLOWED_ORIGINS}\", \"MAX_UPLOAD_MB\": \"${MAX_UPLOAD_MB}\"}}"
+ENV_VARS="{\"Variables\": {\"UPLOAD_BUCKET\": \"${BUCKET}\", \"ALLOWED_ORIGINS\": \"${ALLOWED_ORIGINS}\", \"MAX_UPLOAD_MB\": \"${MAX_UPLOAD_MB}\", \"MAX_VIDEO_SECONDS\": \"${MAX_VIDEO_SECONDS}\", \"RATE_LIMIT_PER_HOUR\": \"${RATE_LIMIT_PER_HOUR}\"}}"
 if aws lambda get-function --function-name "$NAME" >/dev/null 2>&1; then
   aws lambda update-function-code --function-name "$NAME" --image-uri "${REPO_URI}:latest" >/dev/null
   aws lambda wait function-updated --function-name "$NAME"
@@ -105,4 +107,5 @@ URL="$(aws lambda get-function-url-config --function-name "$NAME" --query Functi
 echo
 echo "==> Deployed: ${URL}"
 echo "    Test:  curl ${URL}health"
-echo "    Put ${URL%/} into API_URL in web/example.html."
+echo "    Web app: ${URL}app/"
+echo "    To embed on your own site, put ${URL%/} into API_URL in web/index.html."
